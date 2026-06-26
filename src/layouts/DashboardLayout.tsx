@@ -27,6 +27,8 @@ import Navigation from "@/layouts/Navigation";
 import Header, { headerHeight } from "./Header";
 import { OnboardingProvider } from "@/modules/onboarding/OnboardingProvider";
 import { isNetBirdCloud } from "@utils/netbird";
+import { SWRConfig } from "swr";
+import { jitGroupFilter } from "@/modules/jit/misc/jitGroupFilter";
 
 export default function DashboardLayout({
   children,
@@ -35,6 +37,8 @@ export default function DashboardLayout({
 }>) {
   return (
     <ApplicationProvider>
+      {/* JIT: hide marker-tagged JIT groups/policies from every dashboard page. */}
+      <SWRConfig value={{ use: [jitGroupFilter] }}>
       <DistributorProvider>
         <MSPProvider>
           <UsersProvider>
@@ -52,6 +56,7 @@ export default function DashboardLayout({
           </UsersProvider>
         </MSPProvider>
       </DistributorProvider>
+      </SWRConfig>
     </ApplicationProvider>
   );
 }
