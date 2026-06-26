@@ -8,8 +8,12 @@ export interface SchedulerDeps {
   reconcile: () => Promise<unknown>;
   intervalSec: number;
   reconcileEnabled: boolean;
+  /** Delete terminal grants older than this many days (cleanup runs hourly). */
+  retentionDays?: number;
   now?: () => Date;
 }
+
+const CLEANUP_INTERVAL_MS = 3_600_000; // 1h
 
 /**
  * Periodic sweep: auto-deny stale pending requests, expire elapsed grants,
@@ -21,6 +25,7 @@ export function createScheduler(deps: SchedulerDeps) {
   const now = deps.now ?? (() => new Date());
   let running = false;
   let timer: NodeJS.Timeout | null = null;
+  let lastCleanup = 0;
 
   async function tick(): Promise<void> {
     if (running) return;
@@ -59,6 +64,13 @@ export function createScheduler(deps: SchedulerDeps) {
         } catch (e) {
           logger.warn({ err: (e as Error).message }, "reconcile pass failed");
         }
+      }
+
+      if (deps.retentionDays && now().getTime() - lastCleanup > CLEANUP_INTERVAL_MS) {
+        lastCleanup = now().getTime();
+        const cutoff = new Date(now().getTime() - deps.retentionDays * 86_400_000).toISOString();
+        const removed = deps.grantRepo.deleteTerminalOlderThan(cutoff);
+        if (removed > 0) logger.info({ removed }, "retention cleanup removed terminal grants");
       }
     } finally {
       running = false;

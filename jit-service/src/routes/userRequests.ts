@@ -27,7 +27,11 @@ export function registerUserRequestRoutes(app: FastifyInstance, deps: ServerDeps
     return ok(eligible);
   });
 
-  app.post("/requests", auth, async (req, reply) => {
+  const requestRateLimit = {
+    preHandler: app.authenticate,
+    config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
+  };
+  app.post("/requests", requestRateLimit, async (req, reply) => {
     const body = parse(CreateRequestRequest, req.body);
     const grant = grants.requestAccess(body.policyId, req.caller!, {
       durationMinutes: body.durationMinutes,

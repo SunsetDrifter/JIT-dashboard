@@ -3,6 +3,9 @@ import Fastify, {
   type FastifyReply,
   type FastifyRequest,
 } from "fastify";
+import helmet from "@fastify/helmet";
+import cors from "@fastify/cors";
+import rateLimit from "@fastify/rate-limit";
 import { fail } from "./lib/envelope.js";
 import { AppError, ErrorCodes, isAppError } from "./lib/errors.js";
 import { logger } from "./lib/logger.js";
@@ -43,6 +46,13 @@ export interface ServerDeps {
 
 export function buildServer(deps: ServerDeps): FastifyInstance {
   const app = Fastify({ logger: false });
+
+  // Security middleware (registrations are queued and applied on ready()).
+  void app.register(helmet, { contentSecurityPolicy: false }); // JSON API; no document CSP
+  if (deps.config.allowedOrigins?.length) {
+    void app.register(cors, { origin: deps.config.allowedOrigins, credentials: true });
+  }
+  void app.register(rateLimit, { global: true, max: 300, timeWindow: "1 minute" });
 
   app.decorate(
     "authenticate",

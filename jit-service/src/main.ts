@@ -111,6 +111,7 @@ async function main(): Promise<void> {
     reconcile: () => reconcileOnce({ nb, grantRepo, policyRepo, membership }),
     intervalSec: config.sweepIntervalSec,
     reconcileEnabled: config.reconcileEnabled,
+    retentionDays: config.grantRetentionDays,
   });
 
   const app = buildServer({ config, db, nb, jwt, identity, policyService, grantService, auditRepo });
