@@ -7,6 +7,10 @@ import { JwtVerifier } from "./auth/jwt.js";
 import { IdentityResolver } from "./auth/identity.js";
 import { buildServer } from "./server.js";
 import { logger } from "./lib/logger.js";
+import { createPolicyRepo } from "./db/repositories/policyRepo.js";
+import { createGrantRepo } from "./db/repositories/grantRepo.js";
+import { createAuditRepo } from "./db/repositories/auditRepo.js";
+import { createPolicyService } from "./domain/policyService.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -42,7 +46,20 @@ async function main(): Promise<void> {
   const jwt = new JwtVerifier({ authority: config.authAuthority, audience: config.authAudience });
   const identity = new IdentityResolver(nb);
 
-  const app = buildServer({ config, db, nb, jwt, identity });
+  const policyRepo = createPolicyRepo(db);
+  const grantRepo = createGrantRepo(db);
+  const auditRepo = createAuditRepo(db);
+  const policyService = createPolicyService({
+    repo: policyRepo,
+    audit: auditRepo,
+    nb,
+    marker: config.groupMarker,
+    defaultPendingTtlMinutes: config.pendingTtlMinutes,
+    // revokeActiveGrantsForPolicy is wired to grantService in Phase 4.
+  });
+  void grantRepo; // used by grantService in Phase 4
+
+  const app = buildServer({ config, db, nb, jwt, identity, policyService });
   // NOTE: the expiry/reconcile scheduler is started here in Phase 4.
 
   await app.listen({ port: config.listenPort, host: config.listenHost });

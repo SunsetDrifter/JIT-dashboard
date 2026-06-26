@@ -11,8 +11,10 @@ import type { DB } from "./db/index.js";
 import type { NetbirdClient } from "./netbird/client.js";
 import type { JwtVerifier } from "./auth/jwt.js";
 import type { Caller, IdentityResolver } from "./auth/identity.js";
+import type { PolicyService } from "./domain/policyService.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerMeRoutes } from "./routes/me.js";
+import { registerAdminPolicyRoutes } from "./routes/adminPolicies.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -29,6 +31,8 @@ export interface ServerDeps {
   nb: NetbirdClient;
   jwt: JwtVerifier;
   identity: IdentityResolver;
+  /** Optional services; their routes register only when provided (added per phase). */
+  policyService?: PolicyService;
 }
 
 export function buildServer(deps: ServerDeps): FastifyInstance {
@@ -66,7 +70,8 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   app.register(
     async (v1) => {
       registerMeRoutes(v1, deps);
-      // later phases register policy / request / grant / audit routes here
+      if (deps.policyService) registerAdminPolicyRoutes(v1, deps);
+      // later phases register request / grant / audit routes here
     },
     { prefix: "/v1" },
   );
