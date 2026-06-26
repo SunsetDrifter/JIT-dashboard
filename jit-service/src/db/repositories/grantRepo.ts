@@ -116,6 +116,7 @@ export function createGrantRepo(db: DB, now: () => string = () => new Date().toI
   const cleanupStmt = db.prepare(
     "DELETE FROM jit_grants WHERE status IN ('expired','denied','revoked','cancelled') AND COALESCE(revoked_at, decided_at, requested_at) <= ?",
   );
+  const countAllStmt = db.prepare("SELECT COUNT(*) AS n FROM jit_grants");
 
   const getById = (id: string): JitGrant | null => {
     const row = getStmt.get(id) as GrantRow | undefined;
@@ -178,6 +179,8 @@ export function createGrantRepo(db: DB, now: () => string = () => new Date().toI
       (activeUserIdsStmt.all(policyId) as { uid: string }[]).map((r) => r.uid),
 
     deleteTerminalOlderThan: (iso: string): number => cleanupStmt.run(iso).changes,
+
+    countAll: (): number => (countAllStmt.get() as { n: number }).n,
   };
 }
 

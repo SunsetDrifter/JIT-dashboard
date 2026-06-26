@@ -11,6 +11,11 @@ import { createPolicyRepo } from "./db/repositories/policyRepo.js";
 import { createGrantRepo } from "./db/repositories/grantRepo.js";
 import { createAuditRepo } from "./db/repositories/auditRepo.js";
 import { createPolicyService } from "./domain/policyService.js";
+import { createGrantService } from "./domain/grantService.js";
+import { createMembership } from "./domain/membership.js";
+import { KeyedMutex } from "./lib/mutex.js";
+import { createScheduler } from "./scheduler/worker.js";
+import { findOrphanMarkerGroups, reconcileOnce } from "./scheduler/reconcile.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -49,18 +54,67 @@ async function main(): Promise<void> {
   const policyRepo = createPolicyRepo(db);
   const grantRepo = createGrantRepo(db);
   const auditRepo = createAuditRepo(db);
+
+  const mutex = new KeyedMutex();
+  const membership = createMembership({ nb, mutex, grantRepo, policyRepo });
+
+  // Short-TTL cache so each approve doesn't hit GET /accounts.
+  const propCache = { value: false, at: 0 };
+  const isPropagationEnabledCached = async (): Promise<boolean> => {
+    if (Date.now() - propCache.at < 15_000) return propCache.value;
+    try {
+      propCache.value = await isGroupsPropagationEnabled(nb);
+    } catch (e) {
+      logger.warn({ err: (e as Error).message }, "propagation check failed; using last value");
+    }
+    propCache.at = Date.now();
+    return propCache.value;
+  };
+
+  const grantService = createGrantService({
+    grantRepo,
+    policyRepo,
+    audit: auditRepo,
+    membership,
+    isPropagationEnabled: isPropagationEnabledCached,
+    allowSelfApproval: false,
+  });
+
   const policyService = createPolicyService({
     repo: policyRepo,
     audit: auditRepo,
     nb,
     marker: config.groupMarker,
     defaultPendingTtlMinutes: config.pendingTtlMinutes,
-    // revokeActiveGrantsForPolicy is wired to grantService in Phase 4.
+    revokeActiveGrantsForPolicy: (id, reason) => grantService.revokeAllForPolicy(id, reason),
   });
-  void grantRepo; // used by grantService in Phase 4
 
-  const app = buildServer({ config, db, nb, jwt, identity, policyService });
-  // NOTE: the expiry/reconcile scheduler is started here in Phase 4.
+  // Empty-DB guard: alert (don't auto-purge) if the DB looks freshly empty but
+  // JIT-marked groups still have members — a sign of a lost/unmounted volume.
+  if (grantRepo.countAll() === 0 && policyRepo.list().length === 0) {
+    try {
+      const orphans = await findOrphanMarkerGroups(nb, config.groupMarker, new Set());
+      if (orphans.length > 0) {
+        logger.error(
+          { orphanGroups: orphans.length },
+          "DB is empty but JIT-marked groups still have members — possible data loss. Reconcile will not remove them. Restore the DB if unexpected.",
+        );
+      }
+    } catch (e) {
+      logger.warn({ err: (e as Error).message }, "startup orphan check failed");
+    }
+  }
+
+  const scheduler = createScheduler({
+    grantRepo,
+    grantService,
+    reconcile: () => reconcileOnce({ nb, grantRepo, policyRepo, membership }),
+    intervalSec: config.sweepIntervalSec,
+    reconcileEnabled: config.reconcileEnabled,
+  });
+
+  const app = buildServer({ config, db, nb, jwt, identity, policyService, grantService, auditRepo });
+  scheduler.start();
 
   await app.listen({ port: config.listenPort, host: config.listenHost });
   logger.info({ port: config.listenPort, host: config.listenHost }, "jit-service listening");
