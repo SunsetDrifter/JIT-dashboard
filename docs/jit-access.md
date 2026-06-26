@@ -1,183 +1,76 @@
 # Just-in-Time (JIT) Access — Design
 
-> Status: **Proposed** · Fork-only feature (isolated from upstream `netbirdio/dashboard`)
+> Status: **Accepted** · Fork-only feature (isolated from upstream `netbirdio/dashboard`).
+> Glossary lives in [`/CONTEXT.md`](../CONTEXT.md); key decisions in [`docs/adr/`](./adr/).
 
 ## Summary
 
-JIT Access lets administrators define **just-in-time access policies** and lets end-users request **temporary** access to specific NetBird network resources. A request grants the user time-boxed membership of a **custom NetBird group** that already carries an access policy for the target resources; when the window ends, the membership is automatically removed.
+Admins define **JIT policies** that let eligible users request **temporary, approved** access to specific NetBird network resources. An approved **Request** becomes a time-boxed **Grant**: the user is added to a JIT-owned backing group (which carries an access policy to the resources) and is automatically removed at expiry.
 
-- **Access model:** self-service request → **admin approval** → auto-expiry.
-- **Revocation:** **reliable** — access ends at expiry even when no one is logged in.
-- **Scope:** the dashboard and a small companion backend. Not the NetBird client/agent.
-- **Isolation:** all logic in new files; the only upstream `src/` change is a 2-line navigation edit.
+- Self-service request → **admin approval** → auto-expiry. Approval is always required in v1.
+- **Reliable** revocation, enforced server-side even when nobody is logged in.
+- Scope: the dashboard + a small companion backend. Not the NetBird client/agent. Single NetBird account.
 
-## Background & motivation
+## Why a companion backend
 
-NetBird already models everything needed for the *access* itself:
+The dashboard is a **static export** (`next.config.js` → `output: "export"`, served by Nginx; no API routes/server). And every browser→NetBird call uses the *logged-in user's* OIDC token — a regular user lacks `users.update`/`groups.update`, so cannot add themselves to a group. Reliable expiry needs a scheduler; self-service needs privileged mutations. Both require a server component holding a NetBird **service token**. See [ADR 0001](./adr/0001-companion-backend-for-jit.md).
 
-- A **group** can be granted access to network resources via an **access policy**.
-- A user joins a group by updating their `auto_groups` (`PUT /api/users/{id}`) — see `src/contexts/GroupProvider.tsx` (`addUserToGroup` / `removeUserFromGroup`, read-merge-write on the user object).
+## Core mechanism
 
-What NetBird does **not** provide is **time-boxed membership** or a **request/approval workflow**. And the dashboard cannot supply them on its own because:
+Grant = add the backing group to the user's `auto_groups`; revoke = remove it (`PUT /api/users/{id}`, read-merge-write, mirroring `src/contexts/GroupProvider.tsx`). This propagates to the user's existing connected peers within seconds, no re-login — **gated by `Account.settings.groups_propagation_enabled`** (`src/interfaces/Account.ts:21`, default on). JWT/IdP group sync only reconciles JWT-issued memberships, so the API-issued backing group survives (`Group.issued`).
 
-1. **It is a static export.** `next.config.js` sets `output: "export"`; it is served by Nginx with no API routes or server actions. There is no server-side process to revoke access on a timer.
-2. **End-users cannot self-grant.** Every dashboard→NetBird call uses the *logged-in user's* OIDC token. Adding a user to a group requires `users.update` + `groups.update` (admin-only); a regular user's token is rejected.
-
-So JIT adds exactly the missing pieces — timed membership, a scheduler, and an approval workflow — in a small **companion backend**, while reusing NetBird for the access primitive and the existing dashboard for the UI.
+**Hard invariant:** JIT only ever mutates the single **API-issued** backing group. It must **never** create, modify, or change membership of `INTEGRATION` (IdP) or `JWT` groups. Those may be used *read-only* for eligibility/approver criteria.
 
 ## Architecture
 
 ```
-Browser (dashboard, static)                 Companion backend (jit-service, new)       NetBird Mgmt API
-  /jit/request   (end user)  ── bearer ─▶    POST /jit-api/v1/requests
-  /jit/policies  (admin)     ── bearer ─▶    admin policy CRUD
-  /jit/approvals (admin)     ── bearer ─▶    approve / deny / revoke ──┐
-                                              scheduler sweep  ─────────┼─ service ─▶  PUT /api/users/{id}
-                                              SQLite (policies,         │   token         (auto_groups +/-)
-                                              grants, audit)  ◀─────────┘
+Browser (dashboard, static)              Companion backend (jit-service, new)        NetBird Mgmt API
+  /jit/request   (user)  ── bearer ─▶    POST /jit-api/v1/requests                    (service token)
+  /jit/policies  (admin) ── bearer ─▶    JIT-policy CRUD → provisions group+policy ─▶  POST /api/groups,/api/policies
+  /jit/approvals (admin) ── bearer ─▶    approve / deny / revoke ──┐
+                                          scheduler: expire + auto-deny + reconcile ─┼─▶ PUT /api/users/{id} (auto_groups)
+                                          SQLite (policies, grants, audit) ◀─────────┘
+DashboardLayout <SWRConfig use:[jitFilter]> ─ strips marker-tagged /groups & /policies from every other page
 ```
 
-- The **backing group + access policy → resources** is created by the admin in NetBird's existing UI. JIT manages only **timed membership** of that group, at **user level** (`auto_groups`).
-- The backend is deployed **same-origin** behind the existing Nginx (`location /jit-api/`). The browser calls a **relative** URL, covered by CSP `connect-src 'self'` — no CSP or CORS changes.
-- The browser reaches the backend through the **existing** dashboard API layer (`useFetchApi` / `useApiCall` with `{ origin }`), exactly as `src/cloud/cloud-hooks/useAuthService.ts` already calls a separate service. The OIDC bearer is attached automatically; `src/utils/api.tsx` is untouched.
+- Deployed **same-origin** behind Nginx (`location /jit-api/`); browser uses a **relative** base → CSP `connect-src 'self'`, no CSP/CORS edits, no backend-URL config plumbing.
+- Browser→backend reuses the existing API layer with `{ origin }` (precedent: `src/cloud/cloud-hooks/useAuthService.ts`) — `src/utils/api.tsx` untouched.
+- Stack: Node 20 + TS + Fastify + better-sqlite3 + jose + zod + pino. Own Docker image; root `docker-compose.yml` (dashboard + jit-service + volume).
 
-### Technology
+## Behaviour decisions
 
-| Area | Choice |
-|---|---|
-| Backend runtime | Node 20 + TypeScript |
-| HTTP framework | Fastify |
-| Storage | SQLite (`better-sqlite3`, WAL) |
-| JWT verification | `jose` (remote JWKS) |
-| Validation | `zod` (every boundary) |
-| Logging | `pino` (+ append-only audit log) |
-| Scheduler | `setInterval` sweep (state in SQLite; crash-safe) |
-| Deployment | Own Docker image; root `docker-compose.yml` runs dashboard + jit-service |
+- **JIT owns the group AND the NetBird policy.** Admins pick target resources in the JIT page; JIT provisions a dedicated, marker-tagged, **JIT-exclusive** API group + a NetBird policy, and **hides both** from all other dashboard pages via one SWR middleware. See [ADR 0002](./adr/0002-jit-owns-and-hides-netbird-objects.md).
+- **Eligibility:** per-policy list of user groups (any type incl. IdP/JWT, read-only) allowed to request; evaluated by intersecting the requester's `auto_groups`.
+- **Clock:** `expires_at = approvalTime + requestedDuration`.
+- **Request lifecycle:** pending Requests auto-deny after a TTL (default 24h); one in-flight Request per (user, policy); no extend (re-request); users can cancel a pending Request and end their own active Grant early; admins can revoke any Grant.
+- **Durability:** periodic reconcile makes each backing group's membership equal {active Grants}; expiry **fails closed**; a startup guard prevents accidental mass-removal on an empty/unmounted DB. See [ADR 0003](./adr/0003-reconcile-fail-closed-durability.md).
+- **Notifications:** in-dashboard only (pending badge + Approvals queue) in v1.
 
 ## Backend (`jit-service/`)
 
-### Data model (SQLite)
+**Data model (SQLite, WAL):** `jit_policies` (`backing_group_id`, `netbird_policy_id`, `target_resource_ids[]`, `traffic`, `max_duration_minutes`, `requestable_by`, `approver_criteria`, `pending_ttl_minutes`, `enabled`, …); `jit_grants` (lifecycle row: `status` pending→approved→active→expired/denied/revoked/cancelled/failed, `expires_at`, timestamps, `last_error`); `jit_audit_log` (append-only).
 
-- **`jit_policies`** — `id, name, description, backing_group_id, display_resource_ids[], max_duration_minutes, requestable_by {mode:'all'|'groups', groupIds[]}, requires_approval, approver_criteria {mode:'any_admin'|'groups', groupIds[]}, enabled, created_by, created_at, updated_at`.
-- **`jit_grants`** (request + grant in one lifecycle row) — `id, policy_id, requester_user_id/email, requested_duration_minutes, justification, status, approver, denial_reason, revoke_reason, group_was_preexisting, requested_at, decided_at, activated_at, expires_at, revoked_at, last_error`.
-- **`jit_audit_log`** (append-only) — `at, actor, action, grant_id/policy_id, detail`.
+**API** (`/jit-api/v1`, envelope `{success,data?,error?,meta?}`, bearer except `/healthz`): `GET /healthz`, `GET /me`; user `GET /policies/eligible`, `POST /requests`, `GET /requests/mine`, `POST /requests/:id/cancel`, `POST /grants/:id/end`; admin `*/admin/policies[...]`, `GET /admin/requests`, `POST /admin/requests/:id/approve|deny`, `GET /admin/grants/active`, `POST /admin/grants/:id/revoke`, `GET /admin/audit`.
 
-Status lifecycle: `pending → approved → active → expired`, plus `denied`, `revoked`, `failed`. `requires_approval=false` makes `pending → approved` immediate. Indexes: `(status, expires_at)`, `(requester_user_id, status)`.
+**Auth:** verify forwarded OIDC JWT (`jose`, issuer/audience = dashboard's `AUTH_AUTHORITY`/`AUTH_AUDIENCE`); resolve NetBird user+role via the service token (role from NetBird, never the JWT); fail closed on ambiguity. **Scheduler:** expire, auto-deny pending, reconcile, retry; crash-safe (state in SQLite). **Security:** service-token secret validated at startup (capability probe), per-user async mutex, idempotent revoke that never fails open, rate limiting, audit log.
 
-### API (envelope `{ success, data?, error?, meta? }`; `/jit-api/v1`; bearer required except `/healthz`)
+## Frontend (new isolated files)
 
-| Method | Path | Who | Purpose |
-|---|---|---|---|
-| GET | `/healthz` | — | liveness |
-| GET | `/me` | any auth | `{ userId, email, role, isAdmin }` |
-| GET | `/policies/eligible` | self | policies the caller may request |
-| POST | `/requests` | self | create request (≤ max, eligible, no dup); rate-limited |
-| GET | `/requests/mine` | self | caller's requests |
-| POST | `/requests/:id/cancel` | self | cancel a pending request |
-| ALL | `/admin/policies[...]` | admin | policy CRUD (DELETE cascade-revokes active grants) |
-| GET | `/admin/requests` | admin/approver | all requests |
-| POST | `/admin/requests/:id/approve` | admin/approver | approve + apply immediately (`expires_at = now + duration`) |
-| POST | `/admin/requests/:id/deny` | admin/approver | deny |
-| GET | `/admin/grants/active` | admin | active grants |
-| POST | `/admin/grants/:id/revoke` | admin | force-revoke now |
-| GET | `/admin/audit` | admin | audit log |
+`src/app/(dashboard)/jit/{layout,page,request,policies,approvals}`; `src/modules/jit/**` (`JitProvider`, `useJitApi` + read hooks, modals, tables, `interfaces/Jit.ts` + zod, `misc/jitGroupFilter`); `src/cloud/jit/JitNavigation.tsx`. Backend client wraps `useFetchApi`/`useApiCall` with `{ origin: "/jit-api/v1", key: "jit" }`. Admin pages gated on `isOwnerOrAdmin`; request page open to authenticated users. Reuses `ReverseProxiesProvider`, `setup-keys/*`, `PeerGroupSelector`, the `reverse-proxy/services` page shell.
 
-### AuthN / AuthZ
+## Minimal upstream touches (additive)
 
-1. Dashboard forwards the user's **OIDC token** (`Authorization: Bearer`).
-2. Backend **verifies the JWT** (`jose`) against the OIDC authority JWKS, checking `issuer = AUTH_AUTHORITY` and `audience = AUTH_AUDIENCE` (the dashboard's own values).
-3. **Resolve the NetBird user + role** via the service token (`GET /api/users`, match by email, fallback `idp_id`/`sub`), short-TTL cached. **Role is read from NetBird, never from a JWT claim.**
-4. Self endpoints act only on the caller's own id (never trust a body `userId`); admin endpoints require role ∈ {admin, owner} or membership in `approver_criteria`. **Fail closed** on ambiguous identity / unreachable JWKS.
+1. `src/layouts/Navigation.tsx` — +2 lines (`<JitNavigation/>`).
+2. `src/layouts/DashboardLayout.tsx` — wrap subtree in `<SWRConfig value={{ use:[jitGroupFilter] }}>` (~3 lines).
+3. `docker/default.conf` — `location /jit-api/` reverse-proxy.
+4. New root `docker-compose.yml`.
 
-### Membership logic (mirrors `GroupProvider`)
-
-- **Grant:** fetch user fresh → record `group_was_preexisting` → if not preexisting, `PUT /api/users/{id}` with the full user object and `auto_groups` updated to include the backing group → set `active`, `expires_at`.
-- **Revoke (manual or expiry):** fetch fresh → **skip removal if `group_was_preexisting`** (never strip standing access) → **skip if another active grant still needs the group** → else PUT with the id filtered out. Idempotent (group-already-absent = success).
-- **Concurrency:** per-user async mutex serializes read-modify-write. Single-instance deployment assumed.
-
-### Scheduler
-
-A `setInterval` sweep (default 30 s): (1) **expire** grants past `expires_at`; (2) **retry** failed applies with bounded backoff. Re-entrancy guard prevents overlap. **Crash-safe** — state in SQLite; on restart, anything past `expires_at` is revoked on the first tick. Transient NetBird failures during expiry keep retrying until removal is confirmed — access is never left open silently.
-
-### Security & ops
-
-Service token from env/secret, **validated at startup** (capability probe), never logged. `zod` validation, rate limiting on `POST /requests`, `helmet`, audit log on every approve/deny/grant/revoke/expire, retention cleanup of terminal rows. Document a dedicated NetBird **service user (admin role)**; network-isolate the container (PATs inherit role).
-
-### Layout
-
-```
-jit-service/{package.json,tsconfig.json,Dockerfile,.env.example}
-jit-service/src/
-  server.ts  config.ts
-  db/{index,migrations, repositories/{policyRepo,grantRepo,auditRepo}}.ts
-  auth/{jwt,identity,guards}.ts
-  netbird/{client,users,groups,networks}.ts
-  domain/{policyService,grantService,lifecycle}.ts
-  scheduler/worker.ts
-  routes/{health,me,userRequests,adminPolicies,adminRequests,adminGrants}.ts
-  schemas/  lib/{envelope,errors,mutex,logger}.ts
-  test/
-```
-
-## Frontend (dashboard)
-
-### Routes (`src/app/(dashboard)/jit/`)
-
-- `layout.tsx` mounts `<JitProvider>` once (new file; no upstream layout edit).
-- `page.tsx` → redirect to `/jit/request`.
-- `request/page.tsx` — **end-user** (all authenticated users): eligible policies + request modal (duration ≤ max + justification) + "My requests" with cancel.
-- `policies/page.tsx` — **admin** (`isOwnerOrAdmin`): policies table + create/edit modal.
-- `approvals/page.tsx` — **admin**: tabs — *Pending* (approve/deny) and *Active grants* (revoke).
-
-### Module layout
-
-`src/modules/jit/**` — `JitProvider.tsx`; `hooks/{useJitApi,useJitPolicies,useJitRequests,useJitGrants,useJitEligibility}.ts`; `config/jitConfig.ts`; `modals/{JitRequestModal,JitPolicyModal,JitDenyModal}.tsx`; `table/{JitPoliciesTable,JitRequestsTable,JitGrantsTable}.tsx` + `cells/*`; `interfaces/Jit.ts` (+ zod); `misc/{constants,JitDocsLink}.tsx`.
-`src/cloud/jit/JitNavigation.tsx` — the navigation entry.
-
-### Data layer
-
-`useJitApi.ts` wraps the existing `useFetchApi`/`useApiCall` with `{ origin: jitBackendBaseUrl, key: "jit" }` (separate SWR cache; OIDC bearer auto-attached). Mutations use `notify({ promise, ... })` (Sonner) and revalidate via `mutate(["/path","jit"])`.
-
-### Role gating
-
-Admin pages wrapped in `<RestrictedAccess hasAccess={isOwnerOrAdmin}>` (`useLoggedInUser()` — there is no `permission.jit` module). The request page is open to all authenticated users with a data-driven empty state. Frontend gating is UX-only; the backend re-authorizes every call. *Known item:* `DashboardLayout` hides the sidebar for `isRestricted` users — v1 targets non-restricted users.
-
-### Reuse map
-
-| New | Copies / composes |
-|---|---|
-| `JitNavigation.tsx` | `src/cloud/distributor/DistributorNavigation.tsx`, `@components/SidebarItem` |
-| `JitProvider.tsx` | `src/contexts/ReverseProxiesProvider.tsx` |
-| `useJitApi.ts` | `src/cloud/cloud-hooks/useAuthService.ts`, `src/utils/api.tsx` |
-| modals / tables / cells | `src/modules/setup-keys/*` (duration `Input` w/ `customPrefix`/`customSuffix`), `@components/PeerGroupSelector`, `@components/UserSelector` |
-| `(dashboard)/jit/**/page.tsx` | `src/app/(dashboard)/reverse-proxy/services/page.tsx` |
-
-## Minimal upstream touches (all additive)
-
-1. `src/layouts/Navigation.tsx` — +2 lines (import + `<JitNavigation />`). *Only `src/` code edit.*
-2. `docker/default.conf` — `location /jit-api/ { proxy_pass http://jit-service:8080/; }` (same-origin; avoids CSP/CORS).
-3. New `docker-compose.yml` at repo root — dashboard + jit-service + shared volume.
-
-Net upstream `src/` diff: **2 lines**. Everything else is new isolated files or additive deploy config, so upstream merges stay clean.
-
-## Implementation phases (TDD throughout)
-
-1. **Backend foundation** — scaffold, config + startup validation, SQLite + migrations + repositories.
-2. **NetBird client + auth** — `netbirdFetch` (retry), `getUser`/`putUserGroups`; JWT verify + identity/role resolution + guards; `/healthz`, `/me`.
-3. **Policy CRUD + request/grant lifecycle + scheduler** — full state machine, `group_was_preexisting` + overlapping-grant safety, per-user mutex, crash-safe sweep.
-4. **Backend hardening + deploy** — helmet, rate-limit, CORS, audit, retention; Dockerfile, compose, Nginx block.
-5. **Frontend client + provider** — `jitConfig`, `interfaces/Jit.ts` (+zod), `useJitApi`, `JitProvider` + read hooks.
-6. **Admin Policies page**.
-7. **Admin Approvals + Active grants**.
-8. **End-user Request page**.
-9. **Nav injection + polish + Playwright E2E** (create → request → approve → active → expiry/revoke; role-gating).
+Everything else is new isolated files. No `api.tsx`/config edits (same-origin relative base).
 
 ## Verification
 
-- **Backend:** unit (repos, read-merge-write, JWT/identity, full grant state machine, **injected-clock expiry**, restart recovery) + integration vs a NetBird stub. Confirm exact required fields of `PUT /api/users/{id}` against a dev NetBird in phase 2.
-- **Manual E2E (dev):** `docker-compose up`; admin creates a JIT policy → user requests → admin approves → user gains resource access → confirm **auto-removal at expiry** (1-min duration) and **manual revoke**; confirm a pre-existing member keeps the group after expiry.
-- **Frontend:** unit + provider integration (mocked api) + Playwright E2E. Target 80%+ coverage.
+Backend unit/integration (provisioning, grant state machine, injected-clock expiry, pending auto-deny, reconcile incl. empty-DB guard, JWT/identity, fail-closed, NetBird stub). Manual dev `docker-compose up`: create JIT policy (verify group+policy exist in NetBird API but absent from dashboard pages/pickers) → request → approve → resource reachable within seconds → auto-removed at 1-min expiry → revoke/end-early → propagation-off approve fails → stray member reconciled away. Frontend unit + provider integration + Playwright E2E. 80%+ coverage.
 
 ## Risks / edge cases
 
-OIDC `sub` ≠ NetBird user id (resolve by email; fail closed) · role is NetBird's, not the IdP's · `group_was_preexisting` must prevent stripping standing access · overlapping grants remove only on the last expiry · lost-update on `auto_groups` → per-user mutex + fresh read · revoke must never fail open (retry until confirmed) · service token is effectively admin (network-isolate) · policy deletion cascades to active grants.
+Propagation setting off (guarded); never touch IdP/JWT groups (API-only invariant + guards); lost/empty DB (reconcile fail-closed + startup guard + backups); drift (reconcile); revoke never fails open (retry until confirmed); marker-based hiding is name-dependent (JIT owns the names); service token is effectively admin (network-isolate); JIT-policy delete cascades (revoke → delete policy → delete group); `PUT /api/users` sends the full object (preserve `role`/`is_blocked`).
