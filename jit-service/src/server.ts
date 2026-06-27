@@ -47,6 +47,22 @@ export interface ServerDeps {
 export function buildServer(deps: ServerDeps): FastifyInstance {
   const app = Fastify({ logger: false });
 
+  // Tolerate empty JSON bodies (approve/deny/cancel/end/revoke are bodyless POSTs).
+  app.addContentTypeParser(
+    "application/json",
+    { parseAs: "string" },
+    (_req, body, done) => {
+      const text = (body as string).trim();
+      if (text === "") return done(null, {});
+      try {
+        done(null, JSON.parse(text));
+      } catch (err) {
+        (err as { statusCode?: number }).statusCode = 400;
+        done(err as Error, undefined);
+      }
+    },
+  );
+
   // Security middleware (registrations are queued and applied on ready()).
   void app.register(helmet, { contentSecurityPolicy: false }); // JSON API; no document CSP
   if (deps.config.allowedOrigins?.length) {

@@ -111,4 +111,16 @@ describe("request → approve (HTTP)", () => {
     });
     expect(res.statusCode).toBe(403);
   });
+
+  it("tolerates an empty JSON body on bodyless POSTs", async () => {
+    const { app } = build();
+    // Content-Type: application/json with no body must reach the handler (404 for a
+    // missing grant), not fail with a 400 "Body cannot be empty" parse error.
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/admin/requests/does-not-exist/approve",
+      headers: { authorization: "Bearer admin", "content-type": "application/json" },
+    });
+    expect(res.statusCode).toBe(404);
+  });
 });

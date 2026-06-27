@@ -77,7 +77,7 @@ async function main(): Promise<void> {
     audit: auditRepo,
     membership,
     isPropagationEnabled: isPropagationEnabledCached,
-    allowSelfApproval: false,
+    allowSelfApproval: config.allowSelfApproval,
   });
 
   const policyService = createPolicyService({
