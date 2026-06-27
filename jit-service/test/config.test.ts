@@ -28,6 +28,7 @@ describe("loadConfig", () => {
     expect(cfg.pendingTtlMinutes).toBe(1440);
     expect(cfg.groupMarker).toBe("jit:");
     expect(cfg.reconcileEnabled).toBe(true);
+    expect(cfg.maxRemovalsPerPass).toBe(100);
     expect(cfg.allowedOrigins).toEqual([]);
   });
 

@@ -108,7 +108,14 @@ async function main(): Promise<void> {
   const scheduler = createScheduler({
     grantRepo,
     grantService,
-    reconcile: () => reconcileOnce({ nb, grantRepo, policyRepo, membership }),
+    reconcile: () =>
+      reconcileOnce({
+        nb,
+        grantRepo,
+        policyRepo,
+        membership,
+        maxRemovalsPerPass: config.maxRemovalsPerPass,
+      }),
     intervalSec: config.sweepIntervalSec,
     reconcileEnabled: config.reconcileEnabled,
     retentionDays: config.grantRetentionDays,

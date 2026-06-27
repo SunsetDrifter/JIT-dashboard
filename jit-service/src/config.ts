@@ -23,6 +23,7 @@ const EnvSchema = z.object({
   JIT_GROUP_MARKER: z.string().min(1).default("jit:"),
   JIT_GRANT_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
   JIT_RECONCILE_ENABLED: boolish(true),
+  JIT_MAX_REMOVALS_PER_PASS: z.coerce.number().int().positive().default(100),
   JIT_ALLOW_SELF_APPROVAL: boolish(false),
   LOG_LEVEL: z.string().min(1).default("info"),
 });
@@ -41,6 +42,7 @@ export interface Config {
   groupMarker: string;
   grantRetentionDays: number;
   reconcileEnabled: boolean;
+  maxRemovalsPerPass: number;
   allowSelfApproval: boolean;
   logLevel: string;
 }
@@ -108,6 +110,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     groupMarker: e.JIT_GROUP_MARKER,
     grantRetentionDays: e.JIT_GRANT_RETENTION_DAYS,
     reconcileEnabled: e.JIT_RECONCILE_ENABLED,
+    maxRemovalsPerPass: e.JIT_MAX_REMOVALS_PER_PASS,
     allowSelfApproval: e.JIT_ALLOW_SELF_APPROVAL,
     logLevel: e.LOG_LEVEL,
   });
