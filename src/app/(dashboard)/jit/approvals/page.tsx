@@ -27,7 +27,7 @@ export default function JitApprovalsPage() {
   const [policyFilter, setPolicyFilter] = useState("");
 
   const requester = (g: JitGrant) => g.requesterEmail ?? g.requesterUserId;
-  const policyName = (g: JitGrant) => policies?.find((p) => p.id === g.policyId)?.name ?? "—";
+  const policyName = (g: JitGrant) => g.policyName ?? policies?.find((p) => p.id === g.policyId)?.name ?? "—";
   const matchesPolicy = (g: JitGrant) => !policyFilter || g.policyId === policyFilter;
   const policyOptions = [
     { label: "All policies", value: "" },

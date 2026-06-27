@@ -63,6 +63,8 @@ export interface JitPolicy {
 export interface JitGrant {
   id: string;
   policyId: string;
+  /** Resolved policy name, attached when grants are listed for the UI. */
+  policyName?: string;
   requesterUserId: string;
   requesterEmail?: string;
   requestedDurationMinutes: number;

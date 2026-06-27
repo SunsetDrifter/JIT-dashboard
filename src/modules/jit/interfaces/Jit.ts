@@ -49,6 +49,8 @@ export interface EligiblePolicy {
 export interface JitGrant {
   id: string;
   policyId: string;
+  /** Resolved policy name, attached by the backend when grants are listed. */
+  policyName?: string;
   requesterUserId: string;
   requesterEmail?: string;
   requestedDurationMinutes: number;

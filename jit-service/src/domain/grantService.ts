@@ -24,6 +24,8 @@ export function createGrantService(deps: GrantServiceDeps) {
   const { grantRepo, policyRepo, audit, membership } = deps;
   const now = deps.now ?? (() => new Date());
   const iso = () => now().toISOString();
+  /** Attach the (current) policy name so list views can show it without a second lookup. */
+  const withPolicy = (g: JitGrant): JitGrant => ({ ...g, policyName: policyRepo.getById(g.policyId)?.name });
 
   const mustGrant = (id: string): JitGrant => {
     const g = grantRepo.getById(id);
@@ -141,12 +143,12 @@ export function createGrantService(deps: GrantServiceDeps) {
     },
 
     listMine: (caller: Caller, status?: GrantStatus): JitGrant[] =>
-      grantRepo.listByRequester(caller.userId, status),
+      grantRepo.listByRequester(caller.userId, status).map(withPolicy),
 
     listAll: (status?: GrantStatus): JitGrant[] =>
-      status ? grantRepo.listByStatus(status) : grantRepo.listActive(),
+      (status ? grantRepo.listByStatus(status) : grantRepo.listActive()).map(withPolicy),
 
-    listActive: (): JitGrant[] => grantRepo.listActive(),
+    listActive: (): JitGrant[] => grantRepo.listActive().map(withPolicy),
 
     async approve(grantId: string, caller: Caller): Promise<JitGrant> {
       const grant = mustGrant(grantId);

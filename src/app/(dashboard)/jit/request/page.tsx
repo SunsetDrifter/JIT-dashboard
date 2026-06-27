@@ -20,6 +20,7 @@ export default function JitRequestPage() {
   const [selected, setSelected] = useState<EligiblePolicy | null>(null);
 
   const columns: ColumnDef<JitGrant>[] = [
+    { id: "policy", header: "Policy", cell: ({ row }) => row.original.policyName ?? "—" },
     { accessorKey: "status", header: "Status", cell: ({ row }) => <JitStatusBadge status={row.original.status} /> },
     { accessorKey: "requestedDurationMinutes", header: "Duration", cell: ({ row }) => formatDuration(row.original.requestedDurationMinutes) },
     { accessorKey: "requestedAt", header: "Requested", cell: ({ row }) => formatDateTime(row.original.requestedAt) },
