@@ -1,3 +1,6 @@
+// The dashboard mirrors this contract in src/modules/jit/interfaces/Jit.ts — keep
+// the two in sync when changing types (there is no compile-time link across the
+// fork boundary).
 import { z } from "zod";
 
 /** Lifecycle of a Request → Grant (one row in jit_grants). */
