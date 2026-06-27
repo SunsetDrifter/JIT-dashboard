@@ -147,13 +147,7 @@ Set the field in `create()` (add to the `grant` object literal, after `pendingEx
 ```ts
         supersedesGrantId: input.supersedesGrantId,
 ```
-Replace the `inFlightStmt` declaration and its `countInFlight` method with an undecided-only check, and add an active-grant lookup. Change:
-```ts
-  const inFlightStmt = db.prepare(
-    "SELECT COUNT(*) AS n FROM jit_grants WHERE requester_user_id = ? AND policy_id = ? AND status IN ('pending','approved','active')",
-  );
-```
-to:
+Add two prepared statements **alongside** the existing `inFlightStmt` (leave `inFlightStmt` in place — Task 2 removes it once `requestAccess` stops using it, keeping the tree green after each task). After the `inFlightStmt` declaration, add:
 ```ts
   const undecidedStmt = db.prepare(
     "SELECT COUNT(*) AS n FROM jit_grants WHERE requester_user_id = ? AND policy_id = ? AND status IN ('pending','approved')",
@@ -162,12 +156,7 @@ to:
     "SELECT * FROM jit_grants WHERE requester_user_id = ? AND policy_id = ? AND status = 'active' LIMIT 1",
   );
 ```
-Replace the returned `countInFlight` method:
-```ts
-    countInFlight: (userId: string, policyId: string): number =>
-      (inFlightStmt.get(userId, policyId) as { n: number }).n,
-```
-with:
+Add two methods to the returned object, right after the existing `countInFlight` method (keep `countInFlight`):
 ```ts
     countUndecided: (userId: string, policyId: string): number =>
       (undecidedStmt.get(userId, policyId) as { n: number }).n,
@@ -180,11 +169,8 @@ with:
 
 - [ ] **Step 6: Run tests to verify they pass**
 
-Run: `cd jit-service && npm test -- grantRepo && npm run typecheck`
-Expected: grantRepo tests PASS. Typecheck FAILS in `grantService.ts` (`countInFlight` no longer exists) — that is expected and fixed in Task 2. To confirm only that breakage remains:
-
-Run: `cd jit-service && npm run typecheck 2>&1 | grep -c countInFlight`
-Expected: `1` (the single stale reference, addressed next).
+Run: `cd jit-service && npm test && npm run typecheck`
+Expected: all backend tests PASS (existing suite + new `grantRepo.test.ts`); typecheck clean. The tree stays green — `countInFlight` remains in place until Task 2 removes it.
 
 - [ ] **Step 7: Commit**
 
@@ -285,15 +271,20 @@ to:
         detail: { durationMinutes: input.durationMinutes, extension: Boolean(active) },
 ```
 
+Now that `requestAccess` no longer calls `countInFlight`, remove the dead code in `jit-service/src/db/repositories/grantRepo.ts`: delete the `inFlightStmt` declaration and the `countInFlight` method (the `undecidedStmt`/`countUndecided` added in Task 1 replace them). Confirm nothing else references `countInFlight`:
+
+Run: `cd jit-service && grep -rn countInFlight src test`
+Expected: no matches.
+
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd jit-service && npm test -- grantService && npm run typecheck`
-Expected: all grantService tests PASS (including the existing "blocks duplicates" case — a pending grant still blocks); typecheck clean.
+Run: `cd jit-service && npm test && npm run typecheck`
+Expected: the full backend suite PASSES (including the existing "blocks duplicates" case — a pending grant still blocks) and typecheck is clean (verifying the `countInFlight` removal broke nothing).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add jit-service/src/domain/grantService.ts jit-service/test/grantService.test.ts
+git add jit-service/src/domain/grantService.ts jit-service/src/db/repositories/grantRepo.ts jit-service/test/grantService.test.ts
 git commit -m "feat(jit): allow an extension request while a grant is active"
 ```
 
