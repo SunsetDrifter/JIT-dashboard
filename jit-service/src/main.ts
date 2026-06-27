@@ -119,6 +119,8 @@ async function main(): Promise<void> {
     intervalSec: config.sweepIntervalSec,
     reconcileEnabled: config.reconcileEnabled,
     retentionDays: config.grantRetentionDays,
+    auditRepo,
+    auditRetentionDays: config.auditRetentionDays,
   });
 
   const app = buildServer({ config, db, nb, jwt, identity, policyService, grantService, auditRepo });

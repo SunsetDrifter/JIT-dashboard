@@ -41,6 +41,7 @@ export function createAuditRepo(db: DB, now: () => string = () => new Date().toI
   const byGrantStmt = db.prepare(
     "SELECT * FROM jit_audit_log WHERE grant_id = ? ORDER BY id DESC",
   );
+  const cleanupStmt = db.prepare("DELETE FROM jit_audit_log WHERE at <= ?");
 
   return {
     append(input: AppendAuditInput): AuditEntry {
@@ -71,6 +72,8 @@ export function createAuditRepo(db: DB, now: () => string = () => new Date().toI
 
     listForGrant: (grantId: string): AuditEntry[] =>
       (byGrantStmt.all(grantId) as AuditRow[]).map(rowToEntry),
+
+    deleteOlderThan: (iso: string): number => cleanupStmt.run(iso).changes,
   };
 }
 

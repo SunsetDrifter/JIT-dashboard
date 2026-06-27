@@ -22,6 +22,7 @@ const EnvSchema = z.object({
   JIT_PENDING_TTL_MINUTES: z.coerce.number().int().positive().default(1440),
   JIT_GROUP_MARKER: z.string().min(1).default("jit:"),
   JIT_GRANT_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
+  JIT_AUDIT_RETENTION_DAYS: z.coerce.number().int().nonnegative().default(0),
   JIT_RECONCILE_ENABLED: boolish(true),
   JIT_MAX_REMOVALS_PER_PASS: z.coerce.number().int().positive().default(100),
   JIT_ALLOW_SELF_APPROVAL: boolish(false),
@@ -41,6 +42,7 @@ export interface Config {
   pendingTtlMinutes: number;
   groupMarker: string;
   grantRetentionDays: number;
+  auditRetentionDays: number;
   reconcileEnabled: boolean;
   maxRemovalsPerPass: number;
   allowSelfApproval: boolean;
@@ -95,6 +97,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const allowedOrigins = e.JIT_ALLOWED_ORIGINS.split(",")
     .map((o) => o.trim())
     .filter((o) => o.length > 0);
+  // CORS is registered with credentials:true, where a "*" origin is both invalid
+  // and a credential-leak footgun — require explicit origins instead.
+  if (allowedOrigins.includes("*")) {
+    throw new AppError(
+      ErrorCodes.CONFIG_INVALID,
+      'JIT_ALLOWED_ORIGINS cannot be "*"; list explicit origins (CORS uses credentials).',
+    );
+  }
 
   return Object.freeze({
     netbirdApiBase: e.NETBIRD_MGMT_API_ENDPOINT.replace(/\/+$/, "") + "/api",
@@ -109,6 +119,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     pendingTtlMinutes: e.JIT_PENDING_TTL_MINUTES,
     groupMarker: e.JIT_GROUP_MARKER,
     grantRetentionDays: e.JIT_GRANT_RETENTION_DAYS,
+    auditRetentionDays: e.JIT_AUDIT_RETENTION_DAYS,
     reconcileEnabled: e.JIT_RECONCILE_ENABLED,
     maxRemovalsPerPass: e.JIT_MAX_REMOVALS_PER_PASS,
     allowSelfApproval: e.JIT_ALLOW_SELF_APPROVAL,

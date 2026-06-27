@@ -1,3 +1,4 @@
+import type { AuditRepo } from "../db/repositories/auditRepo.js";
 import type { GrantRepo } from "../db/repositories/grantRepo.js";
 import type { GrantService } from "../domain/grantService.js";
 import { logger } from "../lib/logger.js";
@@ -10,6 +11,9 @@ export interface SchedulerDeps {
   reconcileEnabled: boolean;
   /** Delete terminal grants older than this many days (cleanup runs hourly). */
   retentionDays?: number;
+  /** Prune the audit log older than this many days; 0/undefined keeps it forever. */
+  auditRepo?: AuditRepo;
+  auditRetentionDays?: number;
   now?: () => Date;
 }
 
@@ -66,11 +70,19 @@ export function createScheduler(deps: SchedulerDeps) {
         }
       }
 
-      if (deps.retentionDays && now().getTime() - lastCleanup > CLEANUP_INTERVAL_MS) {
+      const dueForCleanup = now().getTime() - lastCleanup > CLEANUP_INTERVAL_MS;
+      if (dueForCleanup && (deps.retentionDays || deps.auditRetentionDays)) {
         lastCleanup = now().getTime();
-        const cutoff = new Date(now().getTime() - deps.retentionDays * 86_400_000).toISOString();
-        const removed = deps.grantRepo.deleteTerminalOlderThan(cutoff);
-        if (removed > 0) logger.info({ removed }, "retention cleanup removed terminal grants");
+        if (deps.retentionDays) {
+          const cutoff = new Date(now().getTime() - deps.retentionDays * 86_400_000).toISOString();
+          const removed = deps.grantRepo.deleteTerminalOlderThan(cutoff);
+          if (removed > 0) logger.info({ removed }, "retention cleanup removed terminal grants");
+        }
+        if (deps.auditRepo && deps.auditRetentionDays) {
+          const cutoff = new Date(now().getTime() - deps.auditRetentionDays * 86_400_000).toISOString();
+          const removed = deps.auditRepo.deleteOlderThan(cutoff);
+          if (removed > 0) logger.info({ removed }, "retention cleanup removed audit entries");
+        }
       }
     } finally {
       running = false;

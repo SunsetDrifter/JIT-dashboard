@@ -145,4 +145,13 @@ describe("auditRepo", () => {
     const activate = forGrant.find((e) => e.action === "grant.activate");
     expect(activate?.detail).toEqual({ groupId: "grp-1" });
   });
+
+  it("prunes entries older than a cutoff, keeping newer ones", () => {
+    const audit = createAuditRepo(db);
+    audit.append({ action: "grant.expire", grantId: "old", at: "2020-01-01T00:00:00.000Z" });
+    audit.append({ action: "grant.activate", grantId: "new", at: "2026-06-26T00:00:00.000Z" });
+    expect(audit.deleteOlderThan("2021-01-01T00:00:00.000Z")).toBe(1);
+    expect(audit.list()).toHaveLength(1);
+    expect(audit.list()[0]!.grantId).toBe("new");
+  });
 });

@@ -29,6 +29,7 @@ describe("loadConfig", () => {
     expect(cfg.groupMarker).toBe("jit:");
     expect(cfg.reconcileEnabled).toBe(true);
     expect(cfg.maxRemovalsPerPass).toBe(100);
+    expect(cfg.auditRetentionDays).toBe(0);
     expect(cfg.allowedOrigins).toEqual([]);
   });
 
@@ -54,6 +55,16 @@ describe("loadConfig", () => {
     delete env.NETBIRD_SERVICE_TOKEN;
     const cfg = loadConfig({ ...env, NETBIRD_SERVICE_TOKEN_FILE: file } as NodeJS.ProcessEnv);
     expect(cfg.serviceToken).toBe("file_token_xyz");
+  });
+
+  it('rejects "*" as an allowed origin (CORS uses credentials)', () => {
+    try {
+      loadConfig({ ...base(), JIT_ALLOWED_ORIGINS: "https://a.io, *" } as NodeJS.ProcessEnv);
+      expect.unreachable("should have thrown");
+    } catch (e) {
+      expect(isAppError(e)).toBe(true);
+      expect((e as Error).message).toContain("*");
+    }
   });
 
   it("treats JIT_RECONCILE_ENABLED=false as false", () => {
