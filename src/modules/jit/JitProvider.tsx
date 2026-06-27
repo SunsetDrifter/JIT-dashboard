@@ -70,9 +70,16 @@ export function JitProvider({ children }: { children: React.ReactNode }) {
     return promise.then(() => undefined);
   };
 
+  // Policy CRUD also changes what the current user is eligible to request, so
+  // refresh both the admin list and the requester's eligible list.
+  const refreshPolicies = () => {
+    void eligible.mutate();
+    return policies.mutate();
+  };
+
   const createPolicy = (body: CreateJitPolicyBody) =>
     run(
-      policyCall.post(body).then(() => policies.mutate()),
+      policyCall.post(body).then(refreshPolicies),
       "Create JIT policy",
       `JIT policy '${body.name}' created`,
       "Creating JIT policy…",
@@ -80,7 +87,7 @@ export function JitProvider({ children }: { children: React.ReactNode }) {
 
   const updatePolicy = (id: string, body: UpdatePolicyBody) =>
     run(
-      policyCall.put(body, `/${id}`).then(() => policies.mutate()),
+      policyCall.put(body, `/${id}`).then(refreshPolicies),
       "Update JIT policy",
       "JIT policy updated",
       "Updating…",
@@ -97,7 +104,7 @@ export function JitProvider({ children }: { children: React.ReactNode }) {
     });
     if (!choice) return;
     await run(
-      policyCall.del(`/${id}`).then(() => policies.mutate()),
+      policyCall.del(`/${id}`).then(refreshPolicies),
       "Delete JIT policy",
       `'${name}' deleted`,
       "Deleting…",

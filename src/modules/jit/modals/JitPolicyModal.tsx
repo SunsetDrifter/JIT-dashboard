@@ -59,14 +59,29 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
   }, [open, policy]);
 
   const max = parseInt(maxMinutes || "0", 10);
+  // Only groups that resolve to a real id count toward eligibility — the group
+  // selector lets you type a brand-new name (no id), which is meaningless here.
+  const requesterGroupIds = useMemo(
+    () => requesterGroups.map((g) => g.id).filter((id): id is string => !!id),
+    [requesterGroups],
+  );
+  const approverGroupIds = useMemo(
+    () => approverGroups.map((g) => g.id).filter((id): id is string => !!id),
+    [approverGroups],
+  );
+  // Real user groups to restrict by. The universal "All" group is excluded (it
+  // isn't part of users' auto_groups, so it can't gate eligibility — "everyone"
+  // is the toggle-off state); JIT's own backing groups are already hidden.
+  const hasUserGroups = useMemo(() => (groups ?? []).some((g) => g.name !== "All"), [groups]);
+
   const invalid = useMemo(() => {
     if (name.trim().length === 0) return true;
     if (resourceIds.length === 0) return true;
     if (!max || max < 1) return true;
-    if (restrictRequesters && requesterGroups.length === 0) return true;
-    if (restrictApprovers && approverGroups.length === 0) return true;
+    if (restrictRequesters && requesterGroupIds.length === 0) return true;
+    if (restrictApprovers && approverGroupIds.length === 0) return true;
     return false;
-  }, [name, resourceIds, max, restrictRequesters, requesterGroups, restrictApprovers, approverGroups]);
+  }, [name, resourceIds, max, restrictRequesters, requesterGroupIds, restrictApprovers, approverGroupIds]);
 
   const toggleResource = (id: string) =>
     setResourceIds((prev) => (prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id]));
@@ -79,12 +94,12 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
       targetResourceIds: resourceIds,
       maxDurationMinutes: max,
       requestableBy:
-        restrictRequesters && requesterGroups.length
-          ? { mode: "groups", groupIds: requesterGroups.map((g) => g.id as string) }
+        restrictRequesters && requesterGroupIds.length
+          ? { mode: "groups", groupIds: requesterGroupIds }
           : { mode: "all" },
       approverCriteria:
-        restrictApprovers && approverGroups.length
-          ? { mode: "groups", groupIds: approverGroups.map((g) => g.id as string) }
+        restrictApprovers && approverGroupIds.length
+          ? { mode: "groups", groupIds: approverGroupIds }
           : { mode: "any_admin" },
     };
     setSubmitting(true);
@@ -169,11 +184,19 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
             value={restrictRequesters}
             onChange={setRestrictRequesters}
             label="Restrict who can request"
-            helpText="Off: anyone may request. On: only members of the chosen user groups (IdP groups allowed)."
+            helpText="Off: anyone may request. On: only members of the chosen user groups — including IdP-synced groups. (JIT's own groups are never listed here.)"
           >
             {restrictRequesters && (
               <div className="mt-3">
                 <PeerGroupSelector values={requesterGroups} onChange={setRequesterGroups} hideAllGroup={true} />
+                {!hasUserGroups && (
+                  <div className="mt-2">
+                    <HelpText>
+                      No user groups yet — create one under Team, or connect an identity provider. Leave this off to
+                      allow everyone.
+                    </HelpText>
+                  </div>
+                )}
               </div>
             )}
           </FancyToggleSwitch>
@@ -182,11 +205,16 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
             value={restrictApprovers}
             onChange={setRestrictApprovers}
             label="Restrict approvers to specific groups"
-            helpText="Off: any admin/owner can approve. On: also members of the chosen groups."
+            helpText="Off: any admin/owner can approve. On: also members of the chosen user groups (IdP groups included)."
           >
             {restrictApprovers && (
               <div className="mt-3">
                 <PeerGroupSelector values={approverGroups} onChange={setApproverGroups} hideAllGroup={true} />
+                {!hasUserGroups && (
+                  <div className="mt-2">
+                    <HelpText>No user groups yet — create one under Team, or connect an identity provider.</HelpText>
+                  </div>
+                )}
               </div>
             )}
           </FancyToggleSwitch>
