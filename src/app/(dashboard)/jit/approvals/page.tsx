@@ -165,19 +165,19 @@ export default function JitApprovalsPage() {
             />
           )}
         </div>
-          {extendTarget && (
-            <JitExtendModal
-              grant={extendTarget}
-              maxDurationMinutes={
-                policies?.find((p) => p.id === extendTarget.policyId)?.maxDurationMinutes ??
-                extendTarget.requestedDurationMinutes
-              }
-              open={!!extendTarget}
-              onOpenChange={(open) => {
-                if (!open) setExtendTarget(null);
-              }}
-            />
-          )}
+        {extendTarget && (
+          <JitExtendModal
+            grant={extendTarget}
+            maxDurationMinutes={
+              policies?.find((p) => p.id === extendTarget.policyId)?.maxDurationMinutes ??
+              extendTarget.requestedDurationMinutes
+            }
+            open={!!extendTarget}
+            onOpenChange={(open) => {
+              if (!open) setExtendTarget(null);
+            }}
+          />
+        )}
       </RestrictedAccess>
     </PageContainer>
   );

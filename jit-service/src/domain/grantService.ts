@@ -310,6 +310,7 @@ export function createGrantService(deps: GrantServiceDeps) {
         grantId: renewal.id,
         detail: { adminExtend: true },
       });
+      // activate() re-reads the renewal by id, so the discarded update return is fine.
       return activate(renewal.id, policy, caller);
     },
 

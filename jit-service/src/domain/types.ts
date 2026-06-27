@@ -14,9 +14,6 @@ export const GrantStatus = z.enum([
 ]);
 export type GrantStatus = z.infer<typeof GrantStatus>;
 
-/** Statuses that count as "in flight" — block a second Request for the same (user, policy). */
-export const IN_FLIGHT_STATUSES = ["pending", "approved", "active"] as const;
-
 export const Protocol = z.enum(["all", "tcp", "udp", "icmp"]);
 export type Protocol = z.infer<typeof Protocol>;
 

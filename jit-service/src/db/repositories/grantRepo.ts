@@ -121,7 +121,7 @@ export function createGrantRepo(db: DB, now: () => string = () => new Date().toI
     "SELECT DISTINCT requester_user_id AS uid FROM jit_grants WHERE policy_id = ? AND status = 'active'",
   );
   const cleanupStmt = db.prepare(
-    "DELETE FROM jit_grants WHERE status IN ('expired','denied','revoked','cancelled') AND COALESCE(revoked_at, decided_at, requested_at) <= ?",
+    "DELETE FROM jit_grants WHERE status IN ('expired','denied','revoked','cancelled','superseded') AND COALESCE(revoked_at, decided_at, requested_at) <= ?",
   );
   const countAllStmt = db.prepare("SELECT COUNT(*) AS n FROM jit_grants");
 
