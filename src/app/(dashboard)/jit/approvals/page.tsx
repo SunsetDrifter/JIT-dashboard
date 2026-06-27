@@ -20,11 +20,12 @@ import { formatDateTime, formatDuration, timeRemaining } from "@/modules/jit/mis
 
 export default function JitApprovalsPage() {
   const { isOwnerOrAdmin } = useLoggedInUser();
-  const { pendingRequests, activeGrants, approveRequest, denyRequest, revokeGrant, refreshAdmin } = useJit();
+  const { pendingRequests, activeGrants, policies, approveRequest, denyRequest, revokeGrant, refreshAdmin } = useJit();
   const [tab, setTab] = useState<"pending" | "active">("pending");
   const [search, setSearch] = useState("");
 
   const requester = (g: JitGrant) => g.requesterEmail ?? g.requesterUserId;
+  const policyName = (g: JitGrant) => policies?.find((p) => p.id === g.policyId)?.name ?? "—";
 
   const matchesSearch = (g: JitGrant) => {
     const q = search.trim().toLowerCase();
@@ -38,6 +39,7 @@ export default function JitApprovalsPage() {
 
   const pendingColumns: ColumnDef<JitGrant>[] = [
     { id: "requester", header: "Requester", cell: ({ row }) => requester(row.original) },
+    { id: "policy", header: "Policy", cell: ({ row }) => policyName(row.original) },
     { accessorKey: "requestedDurationMinutes", header: "Duration", cell: ({ row }) => formatDuration(row.original.requestedDurationMinutes) },
     { accessorKey: "justification", header: "Justification", cell: ({ row }) => row.original.justification || "—" },
     { accessorKey: "requestedAt", header: "Requested", cell: ({ row }) => formatDateTime(row.original.requestedAt) },
@@ -59,6 +61,7 @@ export default function JitApprovalsPage() {
 
   const activeColumns: ColumnDef<JitGrant>[] = [
     { id: "requester", header: "User", cell: ({ row }) => requester(row.original) },
+    { id: "policy", header: "Policy", cell: ({ row }) => policyName(row.original) },
     { accessorKey: "activatedAt", header: "Granted", cell: ({ row }) => formatDateTime(row.original.activatedAt) },
     { id: "expires", header: "Expires", cell: ({ row }) => timeRemaining(row.original.expiresAt) },
     {
@@ -109,7 +112,6 @@ export default function JitApprovalsPage() {
               globalSearch={search}
               setGlobalSearch={setSearch}
               placeholder="Search..."
-              className="grow min-w-[260px]"
             />
           </div>
 
