@@ -46,4 +46,22 @@ describe("grantRepo extension support", () => {
     expect(repo.getById(old.id)).toBeNull();
     expect(repo.getById(live.id)!.status).toBe("active");
   });
+
+  it("transitionFrom applies a patch only from the expected status, else returns null", () => {
+    const repo = createGrantRepo(db, () => "2026-06-26T12:00:00.000Z");
+    const g = repo.create({ policyId: "p", requesterUserId: "u", requestedDurationMinutes: 60 });
+
+    // Wrong expected status → no-op.
+    expect(repo.transitionFrom(g.id, "active", { status: "approved" })).toBeNull();
+    expect(repo.getById(g.id)!.status).toBe("pending");
+
+    // Correct expected status → applies and returns the merged grant.
+    const approved = repo.transitionFrom(g.id, "pending", { status: "approved" });
+    expect(approved!.status).toBe("approved");
+    expect(repo.getById(g.id)!.status).toBe("approved");
+
+    // The pending→approved race: a second caller now finds it no longer pending.
+    expect(repo.transitionFrom(g.id, "pending", { status: "denied" })).toBeNull();
+    expect(repo.getById(g.id)!.status).toBe("approved");
+  });
 });

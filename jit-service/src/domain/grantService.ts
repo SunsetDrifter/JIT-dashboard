@@ -191,12 +191,17 @@ export function createGrantService(deps: GrantServiceDeps) {
           409,
         );
       }
-      grantRepo.update(grantId, {
+      // Atomic pending→approved so two concurrent approvals can't both reach
+      // activate() (the status check above straddles the awaited propagation read).
+      const approved = grantRepo.transitionFrom(grantId, "pending", {
         status: "approved",
         approverUserId: caller.userId,
         approverEmail: caller.email,
         decidedAt: iso(),
       });
+      if (!approved) {
+        throw new AppError(ErrorCodes.CONFLICT, "Request is no longer pending", 409);
+      }
       audit.append({
         action: "grant.approve",
         actorUserId: caller.userId,
@@ -213,13 +218,16 @@ export function createGrantService(deps: GrantServiceDeps) {
         throw new AppError(ErrorCodes.CONFLICT, `Request is ${grant.status}, not pending`, 409);
       }
       assertCanApprove(caller, policyFor(grant).approverCriteria);
-      const updated = grantRepo.update(grantId, {
+      const updated = grantRepo.transitionFrom(grantId, "pending", {
         status: "denied",
         approverUserId: caller.userId,
         approverEmail: caller.email,
         decidedAt: iso(),
         denialReason: reason,
       });
+      if (!updated) {
+        throw new AppError(ErrorCodes.CONFLICT, "Request is no longer pending", 409);
+      }
       audit.append({
         action: "grant.deny",
         actorUserId: caller.userId,
@@ -237,11 +245,14 @@ export function createGrantService(deps: GrantServiceDeps) {
       if (grant.status !== "pending") {
         throw new AppError(ErrorCodes.CONFLICT, "Only pending requests can be cancelled", 409);
       }
-      const updated = grantRepo.update(grantId, {
+      const updated = grantRepo.transitionFrom(grantId, "pending", {
         status: "cancelled",
         decidedAt: iso(),
         denialReason: "cancelled_by_requester",
       });
+      if (!updated) {
+        throw new AppError(ErrorCodes.CONFLICT, "Only pending requests can be cancelled", 409);
+      }
       audit.append({
         action: "grant.cancel",
         actorUserId: caller.userId,

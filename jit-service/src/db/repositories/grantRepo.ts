@@ -91,6 +91,9 @@ const SET =
 export function createGrantRepo(db: DB, now: () => string = () => new Date().toISOString()) {
   const insert = db.prepare(`INSERT INTO jit_grants (${COLS}) VALUES (${VALS})`);
   const updateStmt = db.prepare(`UPDATE jit_grants SET ${SET} WHERE id=@id`);
+  const conditionalUpdateStmt = db.prepare(
+    `UPDATE jit_grants SET ${SET} WHERE id=@id AND status=@expected_status`,
+  );
   const getStmt = db.prepare("SELECT * FROM jit_grants WHERE id = ?");
   const byRequesterStmt = db.prepare(
     "SELECT * FROM jit_grants WHERE requester_user_id = ? ORDER BY requested_at DESC",
@@ -158,6 +161,24 @@ export function createGrantRepo(db: DB, now: () => string = () => new Date().toI
       const merged: JitGrant = { ...existing, ...patch, id };
       updateStmt.run(grantToRow(merged) as unknown as Record<string, unknown>);
       return merged;
+    },
+
+    /**
+     * Apply `patch` only if the row is still in `expected` status, atomically
+     * (the WHERE clause is the guard, not the prior read). Returns the updated
+     * grant, or null if it lost the race / was no longer in `expected`. Use this
+     * for status transitions that straddle an await so two concurrent callers
+     * can't both proceed (e.g. a double-approve).
+     */
+    transitionFrom(id: string, expected: GrantStatus, patch: UpdateGrantInput): JitGrant | null {
+      const existing = getById(id);
+      if (!existing || existing.status !== expected) return null;
+      const merged: JitGrant = { ...existing, ...patch, id };
+      const info = conditionalUpdateStmt.run({
+        ...(grantToRow(merged) as unknown as Record<string, unknown>),
+        expected_status: expected,
+      });
+      return info.changes === 1 ? merged : null;
     },
 
     listByRequester: (userId: string, status?: GrantStatus): JitGrant[] =>
