@@ -1,5 +1,6 @@
 "use client";
 
+import Badge from "@components/Badge";
 import Breadcrumbs from "@components/Breadcrumbs";
 import Button from "@components/Button";
 import Paragraph from "@components/Paragraph";
@@ -17,6 +18,7 @@ import { useLoggedInUser } from "@/contexts/UsersProvider";
 import PageContainer from "@/layouts/PageContainer";
 import type { JitGrant } from "@/modules/jit/interfaces/Jit";
 import { useJit } from "@/modules/jit/JitProvider";
+import { JitExtendModal } from "@/modules/jit/modals/JitExtendModal";
 import { formatDateTime, formatDuration, timeRemaining } from "@/modules/jit/misc/format";
 
 export default function JitApprovalsPage() {
@@ -25,6 +27,7 @@ export default function JitApprovalsPage() {
   const [tab, setTab] = useState<"pending" | "active">("pending");
   const [search, setSearch] = useState("");
   const [policyFilter, setPolicyFilter] = useState("");
+  const [extendTarget, setExtendTarget] = useState<JitGrant | null>(null);
 
   const requester = (g: JitGrant) => g.requesterEmail ?? g.requesterUserId;
   const policyName = (g: JitGrant) => g.policyName ?? policies?.find((p) => p.id === g.policyId)?.name ?? "—";
@@ -46,7 +49,16 @@ export default function JitApprovalsPage() {
 
   const pendingColumns: ColumnDef<JitGrant>[] = [
     { id: "requester", header: "Requester", cell: ({ row }) => requester(row.original) },
-    { id: "policy", header: "Policy", cell: ({ row }) => policyName(row.original) },
+    {
+      id: "policy",
+      header: "Policy",
+      cell: ({ row }) => (
+        <span className="flex items-center gap-2">
+          {policyName(row.original)}
+          {row.original.supersedesGrantId && <Badge variant="blue">extension</Badge>}
+        </span>
+      ),
+    },
     { accessorKey: "requestedDurationMinutes", header: "Duration", cell: ({ row }) => formatDuration(row.original.requestedDurationMinutes) },
     { accessorKey: "justification", header: "Justification", cell: ({ row }) => row.original.justification || "—" },
     { accessorKey: "requestedAt", header: "Requested", cell: ({ row }) => formatDateTime(row.original.requestedAt) },
@@ -75,7 +87,10 @@ export default function JitApprovalsPage() {
       id: "actions",
       header: "",
       cell: ({ row }) => (
-        <div className="flex justify-end">
+        <div className="flex gap-2 justify-end">
+          <Button variant="secondary" size="xs" onClick={() => setExtendTarget(row.original)}>
+            Extend
+          </Button>
           <Button variant="danger-outline" size="xs" onClick={() => revokeGrant(row.original.id)}>
             Revoke
           </Button>
@@ -150,6 +165,19 @@ export default function JitApprovalsPage() {
             />
           )}
         </div>
+          {extendTarget && (
+            <JitExtendModal
+              grant={extendTarget}
+              maxDurationMinutes={
+                policies?.find((p) => p.id === extendTarget.policyId)?.maxDurationMinutes ??
+                extendTarget.requestedDurationMinutes
+              }
+              open={!!extendTarget}
+              onOpenChange={(open) => {
+                if (!open) setExtendTarget(null);
+              }}
+            />
+          )}
       </RestrictedAccess>
     </PageContainer>
   );
