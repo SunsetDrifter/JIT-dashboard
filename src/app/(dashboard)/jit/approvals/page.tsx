@@ -7,7 +7,7 @@ import { DataTable } from "@components/table/DataTable";
 import { RestrictedAccess } from "@components/ui/RestrictedAccess";
 import { cn } from "@utils/helpers";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ZapIcon } from "lucide-react";
+import { RefreshCwIcon, ZapIcon } from "lucide-react";
 import * as React from "react";
 import { useState } from "react";
 import { useLoggedInUser } from "@/contexts/UsersProvider";
@@ -18,8 +18,20 @@ import { formatDateTime, formatDuration, timeRemaining } from "@/modules/jit/mis
 
 export default function JitApprovalsPage() {
   const { isOwnerOrAdmin } = useLoggedInUser();
-  const { pendingRequests, activeGrants, approveRequest, denyRequest, revokeGrant } = useJit();
+  const { pendingRequests, activeGrants, approveRequest, denyRequest, revokeGrant, refreshAdmin } = useJit();
   const [tab, setTab] = useState<"pending" | "active">("pending");
+  const [refreshing, setRefreshing] = useState(false);
+
+  // The queue also refreshes itself (SWR polls pending + active every 30s and
+  // revalidates on focus); this is the manual nudge.
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      await refreshAdmin();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const requester = (g: JitGrant) => g.requesterEmail ?? g.requesterUserId;
 
@@ -74,21 +86,27 @@ export default function JitApprovalsPage() {
 
       <RestrictedAccess hasAccess={isOwnerOrAdmin} page="JIT Approvals">
         <div className="p-default">
-          <div className="flex gap-2 mb-4">
-            {(["pending", "active"] as const).map((t) => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={cn(
-                  "px-3 py-1.5 rounded-md text-sm capitalize transition-colors",
-                  tab === t ? "bg-netbird text-white" : "text-nb-gray-300 hover:bg-nb-gray-900",
-                )}
-              >
-                {t === "pending"
-                  ? `Pending${pendingRequests?.length ? ` (${pendingRequests.length})` : ""}`
-                  : "Active grants"}
-              </button>
-            ))}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex gap-2">
+              {(["pending", "active"] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  className={cn(
+                    "px-3 py-1.5 rounded-md text-sm capitalize transition-colors",
+                    tab === t ? "bg-netbird text-white" : "text-nb-gray-300 hover:bg-nb-gray-900",
+                  )}
+                >
+                  {t === "pending"
+                    ? `Pending${pendingRequests?.length ? ` (${pendingRequests.length})` : ""}`
+                    : "Active grants"}
+                </button>
+              ))}
+            </div>
+            <Button variant="secondary" size="xs" onClick={refresh} disabled={refreshing}>
+              <RefreshCwIcon size={14} className={cn(refreshing && "animate-spin")} />
+              Refresh
+            </Button>
           </div>
 
           {tab === "pending" ? (

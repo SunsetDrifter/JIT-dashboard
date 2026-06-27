@@ -27,7 +27,7 @@ type JitContextValue = {
   pendingRequests?: JitGrant[];
   activeGrants?: JitGrant[];
   isLoading: boolean;
-  refreshAdmin: () => void;
+  refreshAdmin: () => Promise<void>;
   createPolicy: (body: CreateJitPolicyBody) => Promise<void>;
   updatePolicy: (id: string, body: UpdatePolicyBody) => Promise<void>;
   deletePolicy: (id: string, name: string) => Promise<void>;
@@ -51,7 +51,7 @@ export function JitProvider({ children }: { children: React.ReactNode }) {
   const policies = useJitFetch<JitPolicy[]>("/admin/policies", isOwnerOrAdmin);
   const resources = useJitFetch<JitNetworkResource[]>("/admin/network-resources", isOwnerOrAdmin);
   const pending = useJitFetch<JitGrant[]>("/admin/requests?status=pending", isOwnerOrAdmin, 30_000);
-  const active = useJitFetch<JitGrant[]>("/admin/grants/active", isOwnerOrAdmin);
+  const active = useJitFetch<JitGrant[]>("/admin/grants/active", isOwnerOrAdmin, 30_000);
 
   const policyCall = useJitCall<JitPolicy>("/admin/policies");
   const requestCall = useJitCall<JitGrant>("/requests");
@@ -59,11 +59,8 @@ export function JitProvider({ children }: { children: React.ReactNode }) {
   const grantCall = useJitCall<JitGrant>("/grants");
   const adminGrantCall = useJitCall<JitGrant>("/admin/grants");
 
-  const refreshAdmin = () => {
-    void policies.mutate();
-    void pending.mutate();
-    void active.mutate();
-  };
+  const refreshAdmin = (): Promise<void> =>
+    Promise.all([policies.mutate(), pending.mutate(), active.mutate()]).then(() => undefined);
 
   const run = (promise: Promise<unknown>, title: string, description: string, loadingMessage: string) => {
     notify({ title, description, loadingMessage, promise: promise as Promise<unknown> });
