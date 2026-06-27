@@ -121,6 +121,8 @@ export default function JitApprovalsPage() {
                 onChange={setPolicyFilter}
                 options={policyOptions}
                 placeholder="All policies"
+                showSearch
+                searchPlaceholder="Search policies..."
                 triggerClassName="h-[42px]"
                 popoverMinWidth={220}
               />
