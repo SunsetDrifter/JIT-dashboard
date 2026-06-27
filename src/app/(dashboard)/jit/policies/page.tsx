@@ -5,6 +5,7 @@ import Button from "@components/Button";
 import { Callout } from "@components/Callout";
 import Paragraph from "@components/Paragraph";
 import { DataTable } from "@components/table/DataTable";
+import DataTableGlobalSearch from "@components/table/DataTableGlobalSearch";
 import { RestrictedAccess } from "@components/ui/RestrictedAccess";
 import type { ColumnDef } from "@tanstack/react-table";
 import { PlusCircleIcon, ShieldCheckIcon, ZapIcon } from "lucide-react";
@@ -22,6 +23,13 @@ export default function JitPoliciesPage() {
   const { policies, propagationEnabled, deletePolicy } = useJit();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<JitPolicy | undefined>(undefined);
+  const [search, setSearch] = useState("");
+
+  const visiblePolicies = (policies ?? []).filter((p) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return p.name.toLowerCase().includes(q) || (p.description ?? "").toLowerCase().includes(q);
+  });
 
   const openCreate = () => {
     setEditing(undefined);
@@ -78,22 +86,26 @@ export default function JitPoliciesPage() {
       </div>
 
       <RestrictedAccess hasAccess={isOwnerOrAdmin} page="JIT Policies">
-        <div className="p-default flex justify-end mb-3">
-          <Button variant="primary" size="sm" onClick={openCreate}>
+        <div className="p-default flex items-center gap-3 mb-3">
+          <Button variant="primary" className="h-[42px] shrink-0" onClick={openCreate}>
             <PlusCircleIcon size={16} />
             Create JIT policy
           </Button>
+          <DataTableGlobalSearch globalSearch={search} setGlobalSearch={setSearch} placeholder="Search..." />
         </div>
         <div className="p-default">
           <DataTable
             columns={columns}
-            data={policies ?? []}
+            data={visiblePolicies}
             text="JIT policies"
+            showSearchAndFilters={false}
             getStartedCard={
-              <div className="text-center py-10 text-nb-gray-400 flex flex-col items-center gap-2">
-                <ShieldCheckIcon size={28} />
-                <span>No JIT policies yet. Create one to offer temporary access.</span>
-              </div>
+              (policies?.length ?? 0) === 0 ? (
+                <div className="text-center py-10 text-nb-gray-400 flex flex-col items-center gap-2">
+                  <ShieldCheckIcon size={28} />
+                  <span>No JIT policies yet. Create one to offer temporary access.</span>
+                </div>
+              ) : undefined
             }
           />
         </div>
