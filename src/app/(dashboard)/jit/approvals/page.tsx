@@ -5,6 +5,7 @@ import Button from "@components/Button";
 import Paragraph from "@components/Paragraph";
 import { DataTable } from "@components/table/DataTable";
 import DataTableRefreshButton from "@components/table/DataTableRefreshButton";
+import DataTableGlobalSearch from "@components/table/DataTableGlobalSearch";
 import { RestrictedAccess } from "@components/ui/RestrictedAccess";
 import { cn } from "@utils/helpers";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -21,8 +22,19 @@ export default function JitApprovalsPage() {
   const { isOwnerOrAdmin } = useLoggedInUser();
   const { pendingRequests, activeGrants, approveRequest, denyRequest, revokeGrant, refreshAdmin } = useJit();
   const [tab, setTab] = useState<"pending" | "active">("pending");
+  const [search, setSearch] = useState("");
 
   const requester = (g: JitGrant) => g.requesterEmail ?? g.requesterUserId;
+
+  const matchesSearch = (g: JitGrant) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      (g.requesterEmail ?? "").toLowerCase().includes(q) ||
+      (g.requesterUserId ?? "").toLowerCase().includes(q) ||
+      (g.justification ?? "").toLowerCase().includes(q)
+    );
+  };
 
   const pendingColumns: ColumnDef<JitGrant>[] = [
     { id: "requester", header: "Requester", cell: ({ row }) => requester(row.original) },
@@ -93,12 +105,28 @@ export default function JitApprovalsPage() {
               ))}
             </div>
             <DataTableRefreshButton onClick={() => void refreshAdmin()} />
+            <DataTableGlobalSearch
+              globalSearch={search}
+              setGlobalSearch={setSearch}
+              placeholder="Search..."
+              className="grow min-w-[260px]"
+            />
           </div>
 
           {tab === "pending" ? (
-            <DataTable columns={pendingColumns} data={pendingRequests ?? []} text="pending requests" />
+            <DataTable
+              columns={pendingColumns}
+              data={(pendingRequests ?? []).filter(matchesSearch)}
+              text="pending requests"
+              showSearchAndFilters={false}
+            />
           ) : (
-            <DataTable columns={activeColumns} data={activeGrants ?? []} text="active grants" />
+            <DataTable
+              columns={activeColumns}
+              data={(activeGrants ?? []).filter(matchesSearch)}
+              text="active grants"
+              showSearchAndFilters={false}
+            />
           )}
         </div>
       </RestrictedAccess>
