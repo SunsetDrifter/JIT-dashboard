@@ -75,14 +75,14 @@ export default function JitApprovalsPage() {
 
       <RestrictedAccess hasAccess={isOwnerOrAdmin} page="JIT Approvals">
         <div className="p-default">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3 mb-4">
             <div className="flex gap-2">
               {(["pending", "active"] as const).map((t) => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
                   className={cn(
-                    "px-3 py-1.5 rounded-md text-sm capitalize transition-colors",
+                    "inline-flex items-center h-[42px] px-4 rounded-md text-sm capitalize transition-colors",
                     tab === t ? "bg-netbird text-white" : "text-nb-gray-300 hover:bg-nb-gray-900",
                   )}
                 >
