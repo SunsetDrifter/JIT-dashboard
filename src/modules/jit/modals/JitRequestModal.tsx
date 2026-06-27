@@ -18,9 +18,10 @@ type Props = {
   policy: EligiblePolicy;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  mode?: "request" | "extend";
 };
 
-export function JitRequestModal({ policy, open, onOpenChange }: Props) {
+export function JitRequestModal({ policy, open, onOpenChange, mode = "request" }: Props) {
   const { requestAccess } = useJit();
   const [minutes, setMinutes] = useState(String(Math.min(60, policy.maxDurationMinutes)));
   const [justification, setJustification] = useState("");
@@ -47,8 +48,12 @@ export function JitRequestModal({ policy, open, onOpenChange }: Props) {
       <ModalContent maxWidthClass="max-w-md">
         <ModalHeader
           icon={<Clock3Icon size={18} />}
-          title={`Request: ${policy.name}`}
-          description="Request temporary access. It expires automatically when the time is up."
+          title={`${mode === "extend" ? "Extend" : "Request"}: ${policy.name}`}
+          description={
+            mode === "extend"
+              ? "Request more time. Your current access continues uninterrupted until this is approved."
+              : "Request temporary access. It expires automatically when the time is up."
+          }
           color="netbird"
         />
         <div className="px-8 py-6 flex flex-col gap-5">
@@ -85,7 +90,7 @@ export function JitRequestModal({ policy, open, onOpenChange }: Props) {
               <Button variant="secondary">Cancel</Button>
             </ModalClose>
             <Button variant="primary" disabled={invalid || submitting} onClick={submit}>
-              Submit request
+              {mode === "extend" ? "Submit extension" : "Submit request"}
             </Button>
           </div>
         </ModalFooter>

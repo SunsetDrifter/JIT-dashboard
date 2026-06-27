@@ -1,5 +1,6 @@
 "use client";
 
+import Badge from "@components/Badge";
 import Breadcrumbs from "@components/Breadcrumbs";
 import Button from "@components/Button";
 import { Callout } from "@components/Callout";
@@ -18,9 +19,23 @@ import { formatDateTime, formatDuration, JitStatusBadge, timeRemaining } from "@
 export default function JitRequestPage() {
   const { eligiblePolicies, myRequests, cancelRequest, endGrant } = useJit();
   const [selected, setSelected] = useState<EligiblePolicy | null>(null);
+  const [extendPolicy, setExtendPolicy] = useState<EligiblePolicy | null>(null);
 
   const columns: ColumnDef<JitGrant>[] = [
-    { id: "policy", header: "Policy", cell: ({ row }) => row.original.policyName ?? "—" },
+    {
+      id: "policy",
+      header: "Policy",
+      cell: ({ row }) => (
+        <span className="flex items-center gap-2">
+          {row.original.policyName ?? "—"}
+          {row.original.supersedesGrantId && (
+            <span>
+              <Badge variant="blue">extension</Badge>
+            </span>
+          )}
+        </span>
+      ),
+    },
     { accessorKey: "status", header: "Status", cell: ({ row }) => <JitStatusBadge status={row.original.status} /> },
     { accessorKey: "requestedDurationMinutes", header: "Duration", cell: ({ row }) => formatDuration(row.original.requestedDurationMinutes) },
     { accessorKey: "requestedAt", header: "Requested", cell: ({ row }) => formatDateTime(row.original.requestedAt) },
@@ -40,12 +55,34 @@ export default function JitRequestPage() {
               Cancel
             </Button>
           );
-        if (g.status === "active")
-          return (
-            <Button variant="danger-outline" size="xs" onClick={() => endGrant(g.id)}>
-              End now
-            </Button>
+        if (g.status === "active") {
+          const elig = eligiblePolicies?.find((p) => p.id === g.policyId);
+          const pendingExists = (myRequests ?? []).some(
+            (r) => r.status === "pending" && r.policyId === g.policyId,
           );
+          return (
+            <div className="flex gap-2 justify-end">
+              <Button
+                variant="secondary"
+                size="xs"
+                disabled={!elig || pendingExists}
+                onClick={() => elig && setExtendPolicy(elig)}
+                title={
+                  !elig
+                    ? "You are no longer eligible for this policy"
+                    : pendingExists
+                      ? "An extension is already pending"
+                      : undefined
+                }
+              >
+                Extend
+              </Button>
+              <Button variant="danger-outline" size="xs" onClick={() => endGrant(g.id)}>
+                End now
+              </Button>
+            </div>
+          );
+        }
         return null;
       },
     },
@@ -106,6 +143,16 @@ export default function JitRequestPage() {
           open={!!selected}
           onOpenChange={(open) => {
             if (!open) setSelected(null);
+          }}
+        />
+      )}
+      {extendPolicy && (
+        <JitRequestModal
+          policy={extendPolicy}
+          mode="extend"
+          open={!!extendPolicy}
+          onOpenChange={(open) => {
+            if (!open) setExtendPolicy(null);
           }}
         />
       )}
