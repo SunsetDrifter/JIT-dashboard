@@ -146,6 +146,23 @@ describe("grantService", () => {
     expect(() => svc.requestAccess(policy.id, requester, { durationMinutes: 30 })).toThrow();
   });
 
+  it("approving an extension supersedes the prior active grant without touching membership", async () => {
+    const { svc, grantRepo, membership, policy } = setup();
+    const g1 = svc.requestAccess(policy.id, requester, { durationMinutes: 60 });
+    await svc.approve(g1.id, admin); // g1 active, expires 13:00
+
+    const g2 = svc.requestAccess(policy.id, requester, { durationMinutes: 120 });
+    expect(g2.supersedesGrantId).toBe(g1.id);
+
+    membership.calls.length = 0;
+    const active2 = await svc.approve(g2.id, admin);
+    expect(active2.status).toBe("active");
+    expect(active2.expiresAt).toBe("2026-06-26T14:00:00.000Z"); // FIXED + 120m (fresh period)
+    expect(grantRepo.getById(g1.id)!.status).toBe("superseded");
+    // the renewal re-adds the group (idempotent no-op in prod) but NEVER removes it
+    expect(membership.calls.some((c) => c.op === "remove")).toBe(false);
+  });
+
   it("voids active and pending grants when a policy is deleted", async () => {
     const { svc, grantRepo, policy } = setup();
     const active = svc.requestAccess(policy.id, requester, { durationMinutes: 60 });

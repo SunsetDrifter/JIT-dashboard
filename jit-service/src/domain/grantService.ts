@@ -61,6 +61,27 @@ export function createGrantService(deps: GrantServiceDeps) {
         grantId,
         detail: { expiresAt: active.expiresAt },
       });
+      // If this grant renews an existing one, retire the prior grant — but never
+      // remove the backing group (this grant now holds it). Only supersede if the
+      // target is still active; if it already expired/ended, leave its status intact.
+      if (active.supersedesGrantId) {
+        const prior = grantRepo.getById(active.supersedesGrantId);
+        if (prior && prior.status === "active") {
+          grantRepo.update(prior.id, {
+            status: "superseded",
+            revokedAt: iso(),
+            revokeReason: "superseded_by_renewal",
+          });
+          audit.append({
+            action: "grant.supersede",
+            actorUserId: actor?.userId,
+            actorEmail: actor?.email,
+            policyId: policy.id,
+            grantId: prior.id,
+            detail: { supersededBy: grantId },
+          });
+        }
+      }
       return active;
     } catch (e) {
       grantRepo.update(grantId, { status: "failed", lastError: (e as Error).message });
