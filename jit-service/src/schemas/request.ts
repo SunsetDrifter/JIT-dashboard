@@ -11,3 +11,8 @@ export const DecisionReason = z.object({
   reason: z.string().max(500).optional(),
 });
 export type DecisionReason = z.infer<typeof DecisionReason>;
+
+export const ExtendRequest = z.object({
+  durationMinutes: z.number().int().positive(),
+});
+export type ExtendRequest = z.infer<typeof ExtendRequest>;

@@ -271,6 +271,49 @@ export function createGrantService(deps: GrantServiceDeps) {
     },
 
     /**
+     * Admin/approver renews an active grant directly (no pending step): create a
+     * pre-approved superseding grant and activate it. Renews the clock to
+     * now + duration; membership is unchanged (the target already holds the group).
+     */
+    async extendByAdmin(activeGrantId: string, caller: Caller, durationMinutes: number): Promise<JitGrant> {
+      const target = mustGrant(activeGrantId);
+      if (target.status !== "active") {
+        throw new AppError(ErrorCodes.CONFLICT, "Only active grants can be extended", 409);
+      }
+      const policy = policyFor(target);
+      assertCanApprove(caller, policy.approverCriteria);
+      if (durationMinutes > policy.maxDurationMinutes) {
+        throw new AppError(
+          ErrorCodes.VALIDATION,
+          `Requested duration exceeds the maximum of ${policy.maxDurationMinutes} minutes`,
+          400,
+        );
+      }
+      const renewal = grantRepo.create({
+        policyId: target.policyId,
+        requesterUserId: target.requesterUserId,
+        requesterEmail: target.requesterEmail,
+        requestedDurationMinutes: durationMinutes,
+        supersedesGrantId: target.id,
+      });
+      grantRepo.update(renewal.id, {
+        status: "approved",
+        approverUserId: caller.userId,
+        approverEmail: caller.email,
+        decidedAt: iso(),
+      });
+      audit.append({
+        action: "grant.approve",
+        actorUserId: caller.userId,
+        actorEmail: caller.email,
+        policyId: policy.id,
+        grantId: renewal.id,
+        detail: { adminExtend: true },
+      });
+      return activate(renewal.id, policy, caller);
+    },
+
+    /**
      * Cascade for JIT-policy deletion (system actor): void every non-terminal
      * grant so nothing dangles once the backing group/policy are torn down.
      * Active/failed grants are deactivated (membership removed); pending/approved

@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { assertAdmin } from "../auth/guards.js";
 import { ok } from "../lib/envelope.js";
 import { parse } from "../lib/validate.js";
-import { DecisionReason } from "../schemas/request.js";
+import { DecisionReason, ExtendRequest } from "../schemas/request.js";
 import type { GrantStatus } from "../domain/types.js";
 import type { ServerDeps } from "../server.js";
 
@@ -40,6 +40,12 @@ export function registerAdminRequestRoutes(app: FastifyInstance, deps: ServerDep
     const { id } = req.params as { id: string };
     const body = parse(DecisionReason, req.body ?? {});
     return ok(await grants.revoke(id, req.caller!, body.reason ?? "manual"));
+  });
+
+  app.post("/admin/grants/:id/extend", auth, async (req) => {
+    const { id } = req.params as { id: string };
+    const body = parse(ExtendRequest, req.body);
+    return ok(await grants.extendByAdmin(id, req.caller!, body.durationMinutes));
   });
 
   app.get("/admin/audit", auth, async (req) => {

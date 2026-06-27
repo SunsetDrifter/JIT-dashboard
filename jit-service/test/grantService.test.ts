@@ -163,6 +163,24 @@ describe("grantService", () => {
     expect(membership.calls.some((c) => c.op === "remove")).toBe(false);
   });
 
+  it("admin extend creates a superseding active grant, capped at max, gated to approvers", async () => {
+    const { svc, grantRepo, membership, policy } = setup();
+    const g1 = svc.requestAccess(policy.id, requester, { durationMinutes: 60 });
+    await svc.approve(g1.id, admin);
+
+    membership.calls.length = 0;
+    const renewed = await svc.extendByAdmin(g1.id, admin, 120);
+    expect(renewed.status).toBe("active");
+    expect(renewed.expiresAt).toBe("2026-06-26T14:00:00.000Z");
+    expect(renewed.supersedesGrantId).toBe(g1.id);
+    expect(grantRepo.getById(g1.id)!.status).toBe("superseded");
+    expect(membership.calls.some((c) => c.op === "remove")).toBe(false);
+
+    await expect(svc.extendByAdmin(renewed.id, admin, 999)).rejects.toMatchObject({ code: ErrorCodes.VALIDATION });
+    await expect(svc.extendByAdmin(renewed.id, requester, 30)).rejects.toMatchObject({ code: ErrorCodes.FORBIDDEN });
+    await expect(svc.extendByAdmin(g1.id, admin, 30)).rejects.toMatchObject({ code: ErrorCodes.CONFLICT });
+  });
+
   it("voids active and pending grants when a policy is deleted", async () => {
     const { svc, grantRepo, policy } = setup();
     const active = svc.requestAccess(policy.id, requester, { durationMinutes: 60 });
