@@ -37,6 +37,7 @@ type JitContextValue = {
   approveRequest: (id: string) => Promise<void>;
   denyRequest: (id: string, reason?: string) => Promise<void>;
   revokeGrant: (id: string) => Promise<void>;
+  extendGrant: (id: string, durationMinutes: number) => Promise<void>;
 };
 
 const JitContext = createContext<JitContextValue | null>(null);
@@ -189,6 +190,14 @@ export function JitProvider({ children }: { children: React.ReactNode }) {
     );
   };
 
+  const extendGrant = (id: string, durationMinutes: number) =>
+    run(
+      adminGrantCall.post({ durationMinutes }, `/${id}/extend`).then(() => active.mutate()),
+      "Extend grant",
+      "Grant extended",
+      "Extending…",
+    );
+
   const value: JitContextValue = {
     me: me.data,
     isAdmin: me.data?.isAdmin ?? isOwnerOrAdmin,
@@ -210,6 +219,7 @@ export function JitProvider({ children }: { children: React.ReactNode }) {
     approveRequest,
     denyRequest,
     revokeGrant,
+    extendGrant,
   };
 
   return <JitContext.Provider value={value}>{children}</JitContext.Provider>;

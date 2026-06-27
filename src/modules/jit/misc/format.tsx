@@ -13,6 +13,7 @@ const STATUS_VARIANT: Record<GrantStatus, BadgeVariant> = {
   denied: "red",
   revoked: "red",
   cancelled: "gray",
+  superseded: "gray",
   failed: "red",
 };
 

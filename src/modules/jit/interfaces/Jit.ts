@@ -7,6 +7,7 @@ export type GrantStatus =
   | "denied"
   | "revoked"
   | "cancelled"
+  | "superseded"
   | "failed";
 
 export type Protocol = "all" | "tcp" | "udp" | "icmp";
@@ -51,6 +52,8 @@ export interface JitGrant {
   policyId: string;
   /** Resolved policy name, attached by the backend when grants are listed. */
   policyName?: string;
+  /** When set, this grant renews/replaces the referenced grant on activation. */
+  supersedesGrantId?: string;
   requesterUserId: string;
   requesterEmail?: string;
   requestedDurationMinutes: number;
