@@ -131,6 +131,21 @@ describe("grantService", () => {
     expect((await s3.svc.revoke(g3.id, admin, "manual")).status).toBe("revoked");
   });
 
+  it("blocks a second undecided request but allows an extension request while active", async () => {
+    const { svc, policy } = setup();
+    const g1 = svc.requestAccess(policy.id, requester, { durationMinutes: 60 });
+    // second request while g1 is still pending → blocked
+    expect(() => svc.requestAccess(policy.id, requester, { durationMinutes: 60 })).toThrow();
+
+    await svc.approve(g1.id, admin); // g1 now active
+    const ext = svc.requestAccess(policy.id, requester, { durationMinutes: 90 });
+    expect(ext.status).toBe("pending");
+    expect(ext.supersedesGrantId).toBe(g1.id);
+
+    // a third (double extension) is blocked again — ext is undecided
+    expect(() => svc.requestAccess(policy.id, requester, { durationMinutes: 30 })).toThrow();
+  });
+
   it("voids active and pending grants when a policy is deleted", async () => {
     const { svc, grantRepo, policy } = setup();
     const active = svc.requestAccess(policy.id, requester, { durationMinutes: 60 });

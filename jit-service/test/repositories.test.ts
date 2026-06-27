@@ -68,7 +68,7 @@ describe("policyRepo", () => {
 });
 
 describe("grantRepo", () => {
-  it("creates pending grants and enforces in-flight counting", () => {
+  it("creates pending grants and enforces undecided counting", () => {
     const policies = createPolicyRepo(db);
     const grants = createGrantRepo(db);
     const p = policies.create(policyInput());
@@ -81,8 +81,8 @@ describe("grantRepo", () => {
       pendingExpiresAt: "2026-06-27T00:00:00.000Z",
     });
     expect(g.status).toBe("pending");
-    expect(grants.countInFlight("user-1", p.id)).toBe(1);
-    expect(grants.countInFlight("user-2", p.id)).toBe(0);
+    expect(grants.countUndecided("user-1", p.id)).toBe(1);
+    expect(grants.countUndecided("user-2", p.id)).toBe(0);
     expect(grants.listByRequester("user-1")).toHaveLength(1);
   });
 

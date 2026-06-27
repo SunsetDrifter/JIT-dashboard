@@ -111,9 +111,6 @@ export function createGrantRepo(db: DB, now: () => string = () => new Date().toI
   const pendingExpiredStmt = db.prepare(
     "SELECT * FROM jit_grants WHERE status = 'pending' AND pending_expires_at IS NOT NULL AND pending_expires_at <= ?",
   );
-  const inFlightStmt = db.prepare(
-    "SELECT COUNT(*) AS n FROM jit_grants WHERE requester_user_id = ? AND policy_id = ? AND status IN ('pending','approved','active')",
-  );
   const undecidedStmt = db.prepare(
     "SELECT COUNT(*) AS n FROM jit_grants WHERE requester_user_id = ? AND policy_id = ? AND status IN ('pending','approved')",
   );
@@ -182,9 +179,6 @@ export function createGrantRepo(db: DB, now: () => string = () => new Date().toI
 
     listPendingExpiredBefore: (iso: string): JitGrant[] =>
       (pendingExpiredStmt.all(iso) as GrantRow[]).map(rowToGrant),
-
-    countInFlight: (userId: string, policyId: string): number =>
-      (inFlightStmt.get(userId, policyId) as { n: number }).n,
 
     countUndecided: (userId: string, policyId: string): number =>
       (undecidedStmt.get(userId, policyId) as { n: number }).n,

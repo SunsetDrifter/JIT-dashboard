@@ -116,13 +116,15 @@ export function createGrantService(deps: GrantServiceDeps) {
           400,
         );
       }
-      if (grantRepo.countInFlight(caller.userId, policyId) > 0) {
+      if (grantRepo.countUndecided(caller.userId, policyId) > 0) {
         throw new AppError(
           ErrorCodes.CONFLICT,
-          "You already have a pending or active request for this policy",
+          "You already have a request awaiting a decision for this policy",
           409,
         );
       }
+      // An active grant means this is an extension/renewal: it supersedes that grant on approval.
+      const active = grantRepo.getActiveFor(caller.userId, policyId);
       const grant = grantRepo.create({
         policyId,
         requesterUserId: caller.userId,
@@ -130,6 +132,7 @@ export function createGrantService(deps: GrantServiceDeps) {
         requestedDurationMinutes: input.durationMinutes,
         justification: input.justification,
         pendingExpiresAt: minutesFrom(now(), policy.pendingTtlMinutes),
+        supersedesGrantId: active?.id,
       });
       audit.append({
         action: "request.create",
@@ -137,7 +140,7 @@ export function createGrantService(deps: GrantServiceDeps) {
         actorEmail: caller.email,
         policyId,
         grantId: grant.id,
-        detail: { durationMinutes: input.durationMinutes },
+        detail: { durationMinutes: input.durationMinutes, extension: Boolean(active) },
       });
       return grant;
     },
