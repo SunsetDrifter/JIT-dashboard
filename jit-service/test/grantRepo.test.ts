@@ -29,6 +29,8 @@ describe("grantRepo extension support", () => {
     const repo = createGrantRepo(db, () => "2026-06-26T12:00:00.000Z");
     const g = repo.create({ policyId: "p", requesterUserId: "u", requestedDurationMinutes: 60 });
     expect(repo.countUndecided("u", "p")).toBe(1); // pending
+    repo.update(g.id, { status: "approved" });
+    expect(repo.countUndecided("u", "p")).toBe(1); // approved still counts
     repo.update(g.id, { status: "active" });
     expect(repo.countUndecided("u", "p")).toBe(0); // active is decided
   });
