@@ -8,7 +8,7 @@ import { CreateJitPolicyRequest, UpdateJitPolicyRequest } from "../schemas/polic
 import type { ServerDeps } from "../server.js";
 
 export function registerAdminPolicyRoutes(app: FastifyInstance, deps: ServerDeps): void {
-  const svc = deps.policyService!;
+  const svc = deps.policyService;
   const auth = { preHandler: app.authenticate };
 
   app.post("/admin/policies", auth, async (req, reply) => {

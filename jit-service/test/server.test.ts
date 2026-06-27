@@ -5,6 +5,9 @@ import type { Config } from "../src/config.js";
 import type { JwtVerifier } from "../src/auth/jwt.js";
 import type { Caller, IdentityResolver } from "../src/auth/identity.js";
 import type { NetbirdClient } from "../src/netbird/client.js";
+import type { PolicyService } from "../src/domain/policyService.js";
+import type { GrantService } from "../src/domain/grantService.js";
+import type { AuditRepo } from "../src/db/repositories/auditRepo.js";
 
 function makeDeps(): ServerDeps {
   const db = openDb(":memory:");
@@ -23,7 +26,12 @@ function makeDeps(): ServerDeps {
     get: async (path: string) =>
       path === "/accounts" ? [{ id: "acc", settings: { groups_propagation_enabled: true } }] : [],
   } as unknown as NetbirdClient;
-  return { config: {} as Config, db, nb, jwt, identity };
+  // These routes aren't exercised here (only /healthz and /v1/me), so stub the
+  // services the server now always requires.
+  const policyService = {} as unknown as PolicyService;
+  const grantService = {} as unknown as GrantService;
+  const auditRepo = {} as unknown as AuditRepo;
+  return { config: {} as Config, db, nb, jwt, identity, policyService, grantService, auditRepo };
 }
 
 describe("server", () => {

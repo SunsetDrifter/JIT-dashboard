@@ -11,6 +11,7 @@ import type { Config } from "../src/config.js";
 import type { JwtVerifier } from "../src/auth/jwt.js";
 import type { Caller, IdentityResolver } from "../src/auth/identity.js";
 import type { NetbirdClient } from "../src/netbird/client.js";
+import type { PolicyService } from "../src/domain/policyService.js";
 
 const requester: Caller = { userId: "u1", email: "u1@x.com", role: "user", isAdmin: false, autoGroups: [] };
 const admin: Caller = { userId: "adm", email: "a@x.com", role: "admin", isAdmin: true, autoGroups: [] };
@@ -60,7 +61,19 @@ function build() {
     resolve: async (claims: { sub: string }) => (claims.sub === "admin" ? admin : requester),
   } as unknown as IdentityResolver;
 
-  const app = buildServer({ config: {} as Config, db, nb, jwt, identity, grantService, auditRepo });
+  // Policy routes aren't exercised here (request → approve flow only), so stub the
+  // service the server now always requires.
+  const policyService = {} as unknown as PolicyService;
+  const app = buildServer({
+    config: {} as Config,
+    db,
+    nb,
+    jwt,
+    identity,
+    policyService,
+    grantService,
+    auditRepo,
+  });
   return { app, policy };
 }
 

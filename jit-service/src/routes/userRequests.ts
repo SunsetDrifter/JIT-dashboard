@@ -8,8 +8,8 @@ import type { ServerDeps } from "../server.js";
 
 /** End-user (self-service) routes. Auth required; the backend authorizes per caller. */
 export function registerUserRequestRoutes(app: FastifyInstance, deps: ServerDeps): void {
-  const grants = deps.grantService!;
-  const policies = deps.policyService!;
+  const grants = deps.grantService;
+  const policies = deps.policyService;
   const auth = { preHandler: app.authenticate };
 
   app.get("/policies/eligible", auth, async (req) => {

@@ -8,8 +8,8 @@ import type { ServerDeps } from "../server.js";
 
 /** Admin / approver routes. approve+deny authorize via the service (approver groups allowed). */
 export function registerAdminRequestRoutes(app: FastifyInstance, deps: ServerDeps): void {
-  const grants = deps.grantService!;
-  const audit = deps.auditRepo!;
+  const grants = deps.grantService;
+  const audit = deps.auditRepo;
   const auth = { preHandler: app.authenticate };
 
   app.get("/admin/requests", auth, async (req) => {

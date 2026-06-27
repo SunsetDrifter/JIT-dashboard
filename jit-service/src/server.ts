@@ -38,10 +38,9 @@ export interface ServerDeps {
   nb: NetbirdClient;
   jwt: JwtVerifier;
   identity: IdentityResolver;
-  /** Optional services; their routes register only when provided (added per phase). */
-  policyService?: PolicyService;
-  grantService?: GrantService;
-  auditRepo?: AuditRepo;
+  policyService: PolicyService;
+  grantService: GrantService;
+  auditRepo: AuditRepo;
 }
 
 export function buildServer(deps: ServerDeps): FastifyInstance {
@@ -102,11 +101,9 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   app.register(
     async (v1) => {
       registerMeRoutes(v1, deps);
-      if (deps.policyService) registerAdminPolicyRoutes(v1, deps);
-      if (deps.grantService) {
-        registerUserRequestRoutes(v1, deps);
-        registerAdminRequestRoutes(v1, deps);
-      }
+      registerAdminPolicyRoutes(v1, deps);
+      registerUserRequestRoutes(v1, deps);
+      registerAdminRequestRoutes(v1, deps);
     },
     { prefix: "/v1" },
   );
