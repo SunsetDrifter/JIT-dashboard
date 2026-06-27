@@ -7,6 +7,19 @@ const isJitNamed = (item: unknown): boolean => {
   return typeof name === "string" && name.startsWith(JIT_GROUP_MARKER);
 };
 
+// Shared NetBird collections we strip JIT-owned objects from. Keep this list and
+// these exact keys in sync with the dashboard hooks that fetch groups/policies —
+// if a call site uses a different key shape, hiding silently stops working.
+const HIDDEN_COLLECTIONS = ["/groups", "/policies"];
+
+// Normalize an SWR key to its path: keys are either the bare string path or an
+// array whose first element is the path. Strip any query string so variants like
+// `/groups?param=1` still match.
+const keyPath = (key: unknown): string | undefined => {
+  const raw = typeof key === "string" ? key : Array.isArray(key) ? key[0] : undefined;
+  return typeof raw === "string" ? raw.split("?")[0] : undefined;
+};
+
 /**
  * Global SWR middleware that strips JIT-owned (marker-named) groups and
  * policies from the shared `/groups` and `/policies` responses, so they never
@@ -19,9 +32,8 @@ const isJitNamed = (item: unknown): boolean => {
  * navigation transitions (they never commit).
  */
 export const jitGroupFilter: Middleware = (useSWRNext) => (key, fetcher, config) => {
-  const url = typeof key === "string" ? key : Array.isArray(key) ? key[0] : undefined;
   const swr = useSWRNext(key, fetcher, config);
-  const shouldFilter = url === "/groups" || url === "/policies";
+  const shouldFilter = HIDDEN_COLLECTIONS.includes(keyPath(key) ?? "");
   const data = swr.data;
 
   const filtered = useMemo(() => {
