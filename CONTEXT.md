@@ -20,6 +20,12 @@ _Avoid_: application, ticket.
 The active, time-boxed access produced by an approved Request — the backing-group membership plus its `expires_at`.
 _Avoid_: lease, session, assignment.
 
+**Extension (Renewal)**:
+A Request that supersedes the requester's active Grant for the same JIT policy. On approval it renews the access window (`approvalTime + requestedDuration`, capped at the policy max) by activating a new Grant that retires the prior one (`superseded`), with no membership change. Renewable repeatedly.
+
+**superseded**:
+Terminal Grant status for a Grant that has been replaced by an approved renewal.
+
 **Backing group**:
 The dedicated, JIT-owned, JIT-exclusive, API-issued NetBird group that a JIT policy provisions; its members are exactly the holders of active Grants. Hidden from non-JIT dashboard pages.
 _Avoid_: access group, JIT group (in code/UI prose), shared group.
