@@ -4,10 +4,11 @@ import Breadcrumbs from "@components/Breadcrumbs";
 import Button from "@components/Button";
 import Paragraph from "@components/Paragraph";
 import { DataTable } from "@components/table/DataTable";
+import DataTableRefreshButton from "@components/table/DataTableRefreshButton";
 import { RestrictedAccess } from "@components/ui/RestrictedAccess";
 import { cn } from "@utils/helpers";
 import type { ColumnDef } from "@tanstack/react-table";
-import { RefreshCwIcon, ZapIcon } from "lucide-react";
+import { ZapIcon } from "lucide-react";
 import * as React from "react";
 import { useState } from "react";
 import { useLoggedInUser } from "@/contexts/UsersProvider";
@@ -20,18 +21,6 @@ export default function JitApprovalsPage() {
   const { isOwnerOrAdmin } = useLoggedInUser();
   const { pendingRequests, activeGrants, approveRequest, denyRequest, revokeGrant, refreshAdmin } = useJit();
   const [tab, setTab] = useState<"pending" | "active">("pending");
-  const [refreshing, setRefreshing] = useState(false);
-
-  // The queue also refreshes itself (SWR polls pending + active every 30s and
-  // revalidates on focus); this is the manual nudge.
-  const refresh = async () => {
-    setRefreshing(true);
-    try {
-      await refreshAdmin();
-    } finally {
-      setRefreshing(false);
-    }
-  };
 
   const requester = (g: JitGrant) => g.requesterEmail ?? g.requesterUserId;
 
@@ -103,10 +92,7 @@ export default function JitApprovalsPage() {
                 </button>
               ))}
             </div>
-            <Button variant="secondary" size="xs" onClick={refresh} disabled={refreshing}>
-              <RefreshCwIcon size={14} className={cn(refreshing && "animate-spin")} />
-              Refresh
-            </Button>
+            <DataTableRefreshButton onClick={() => void refreshAdmin()} />
           </div>
 
           {tab === "pending" ? (
