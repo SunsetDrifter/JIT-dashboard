@@ -6,6 +6,7 @@ import Paragraph from "@components/Paragraph";
 import { DataTable } from "@components/table/DataTable";
 import DataTableRefreshButton from "@components/table/DataTableRefreshButton";
 import DataTableGlobalSearch from "@components/table/DataTableGlobalSearch";
+import { SelectDropdown } from "@components/select/SelectDropdown";
 import { RestrictedAccess } from "@components/ui/RestrictedAccess";
 import { cn } from "@utils/helpers";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -23,9 +24,15 @@ export default function JitApprovalsPage() {
   const { pendingRequests, activeGrants, policies, approveRequest, denyRequest, revokeGrant, refreshAdmin } = useJit();
   const [tab, setTab] = useState<"pending" | "active">("pending");
   const [search, setSearch] = useState("");
+  const [policyFilter, setPolicyFilter] = useState("");
 
   const requester = (g: JitGrant) => g.requesterEmail ?? g.requesterUserId;
   const policyName = (g: JitGrant) => policies?.find((p) => p.id === g.policyId)?.name ?? "—";
+  const matchesPolicy = (g: JitGrant) => !policyFilter || g.policyId === policyFilter;
+  const policyOptions = [
+    { label: "All policies", value: "" },
+    ...(policies ?? []).map((p) => ({ label: p.name, value: p.id })),
+  ];
 
   const matchesSearch = (g: JitGrant) => {
     const q = search.trim().toLowerCase();
@@ -91,13 +98,13 @@ export default function JitApprovalsPage() {
       <RestrictedAccess hasAccess={isOwnerOrAdmin} page="JIT Approvals">
         <div className="p-default">
           <div className="flex items-center gap-3 mb-4">
-            <div className="flex gap-2">
+            <div className="flex gap-2 shrink-0">
               {(["pending", "active"] as const).map((t) => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
                   className={cn(
-                    "inline-flex items-center h-[42px] px-4 rounded-md text-sm capitalize transition-colors",
+                    "inline-flex items-center h-[42px] px-4 rounded-md text-sm capitalize whitespace-nowrap transition-colors",
                     tab === t ? "bg-netbird text-white" : "text-nb-gray-300 hover:bg-nb-gray-900",
                   )}
                 >
@@ -108,6 +115,16 @@ export default function JitApprovalsPage() {
               ))}
             </div>
             <DataTableRefreshButton onClick={() => void refreshAdmin()} />
+            <div className="w-[220px] shrink-0">
+              <SelectDropdown
+                value={policyFilter}
+                onChange={setPolicyFilter}
+                options={policyOptions}
+                placeholder="All policies"
+                triggerClassName="h-[42px]"
+                popoverMinWidth={220}
+              />
+            </div>
             <DataTableGlobalSearch
               globalSearch={search}
               setGlobalSearch={setSearch}
@@ -118,14 +135,14 @@ export default function JitApprovalsPage() {
           {tab === "pending" ? (
             <DataTable
               columns={pendingColumns}
-              data={(pendingRequests ?? []).filter(matchesSearch)}
+              data={(pendingRequests ?? []).filter((g) => matchesSearch(g) && matchesPolicy(g))}
               text="pending requests"
               showSearchAndFilters={false}
             />
           ) : (
             <DataTable
               columns={activeColumns}
-              data={(activeGrants ?? []).filter(matchesSearch)}
+              data={(activeGrants ?? []).filter((g) => matchesSearch(g) && matchesPolicy(g))}
               text="active grants"
               showSearchAndFilters={false}
             />
