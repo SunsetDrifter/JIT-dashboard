@@ -67,6 +67,10 @@ const MIGRATIONS: Array<(db: DB) => void> = [
       CREATE INDEX idx_audit_grant ON jit_audit_log(grant_id);
     `);
   },
+  // v2 — grant renewals: link a renewal to the grant it supersedes
+  (db) => {
+    db.exec(`ALTER TABLE jit_grants ADD COLUMN supersedes_grant_id TEXT;`);
+  },
 ];
 
 export function runMigrations(db: DB): void {

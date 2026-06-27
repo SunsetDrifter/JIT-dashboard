@@ -22,6 +22,7 @@ interface GrantRow {
   expires_at: string | null;
   revoked_at: string | null;
   last_error: string | null;
+  supersedes_grant_id: string | null;
 }
 
 const rowToGrant = (r: GrantRow): JitGrant => ({
@@ -43,6 +44,7 @@ const rowToGrant = (r: GrantRow): JitGrant => ({
   expiresAt: r.expires_at ?? undefined,
   revokedAt: r.revoked_at ?? undefined,
   lastError: r.last_error ?? undefined,
+  supersedesGrantId: r.supersedes_grant_id ?? undefined,
 });
 
 const grantToRow = (g: JitGrant): GrantRow => ({
@@ -64,6 +66,7 @@ const grantToRow = (g: JitGrant): GrantRow => ({
   expires_at: g.expiresAt ?? null,
   revoked_at: g.revokedAt ?? null,
   last_error: g.lastError ?? null,
+  supersedes_grant_id: g.supersedesGrantId ?? null,
 });
 
 export type CreateGrantInput = {
@@ -73,16 +76,17 @@ export type CreateGrantInput = {
   requestedDurationMinutes: number;
   justification?: string;
   pendingExpiresAt?: string;
+  supersedesGrantId?: string;
 };
 
 export type UpdateGrantInput = Partial<Omit<JitGrant, "id" | "policyId" | "requestedAt">>;
 
 const COLS =
-  "id, policy_id, requester_user_id, requester_email, requested_duration_minutes, justification, status, approver_user_id, approver_email, denial_reason, revoke_reason, requested_at, pending_expires_at, decided_at, activated_at, expires_at, revoked_at, last_error";
+  "id, policy_id, requester_user_id, requester_email, requested_duration_minutes, justification, status, approver_user_id, approver_email, denial_reason, revoke_reason, requested_at, pending_expires_at, decided_at, activated_at, expires_at, revoked_at, last_error, supersedes_grant_id";
 const VALS =
-  "@id, @policy_id, @requester_user_id, @requester_email, @requested_duration_minutes, @justification, @status, @approver_user_id, @approver_email, @denial_reason, @revoke_reason, @requested_at, @pending_expires_at, @decided_at, @activated_at, @expires_at, @revoked_at, @last_error";
+  "@id, @policy_id, @requester_user_id, @requester_email, @requested_duration_minutes, @justification, @status, @approver_user_id, @approver_email, @denial_reason, @revoke_reason, @requested_at, @pending_expires_at, @decided_at, @activated_at, @expires_at, @revoked_at, @last_error, @supersedes_grant_id";
 const SET =
-  "policy_id=@policy_id, requester_user_id=@requester_user_id, requester_email=@requester_email, requested_duration_minutes=@requested_duration_minutes, justification=@justification, status=@status, approver_user_id=@approver_user_id, approver_email=@approver_email, denial_reason=@denial_reason, revoke_reason=@revoke_reason, requested_at=@requested_at, pending_expires_at=@pending_expires_at, decided_at=@decided_at, activated_at=@activated_at, expires_at=@expires_at, revoked_at=@revoked_at, last_error=@last_error";
+  "policy_id=@policy_id, requester_user_id=@requester_user_id, requester_email=@requester_email, requested_duration_minutes=@requested_duration_minutes, justification=@justification, status=@status, approver_user_id=@approver_user_id, approver_email=@approver_email, denial_reason=@denial_reason, revoke_reason=@revoke_reason, requested_at=@requested_at, pending_expires_at=@pending_expires_at, decided_at=@decided_at, activated_at=@activated_at, expires_at=@expires_at, revoked_at=@revoked_at, last_error=@last_error, supersedes_grant_id=@supersedes_grant_id";
 
 export function createGrantRepo(db: DB, now: () => string = () => new Date().toISOString()) {
   const insert = db.prepare(`INSERT INTO jit_grants (${COLS}) VALUES (${VALS})`);
@@ -110,6 +114,12 @@ export function createGrantRepo(db: DB, now: () => string = () => new Date().toI
   const inFlightStmt = db.prepare(
     "SELECT COUNT(*) AS n FROM jit_grants WHERE requester_user_id = ? AND policy_id = ? AND status IN ('pending','approved','active')",
   );
+  const undecidedStmt = db.prepare(
+    "SELECT COUNT(*) AS n FROM jit_grants WHERE requester_user_id = ? AND policy_id = ? AND status IN ('pending','approved')",
+  );
+  const activeForStmt = db.prepare(
+    "SELECT * FROM jit_grants WHERE requester_user_id = ? AND policy_id = ? AND status = 'active' LIMIT 1",
+  );
   const activeUserIdsStmt = db.prepare(
     "SELECT DISTINCT requester_user_id AS uid FROM jit_grants WHERE policy_id = ? AND status = 'active'",
   );
@@ -135,6 +145,7 @@ export function createGrantRepo(db: DB, now: () => string = () => new Date().toI
         status: "pending",
         requestedAt: now(),
         pendingExpiresAt: input.pendingExpiresAt,
+        supersedesGrantId: input.supersedesGrantId,
       };
       insert.run(grantToRow(grant) as unknown as Record<string, unknown>);
       return grant;
@@ -174,6 +185,14 @@ export function createGrantRepo(db: DB, now: () => string = () => new Date().toI
 
     countInFlight: (userId: string, policyId: string): number =>
       (inFlightStmt.get(userId, policyId) as { n: number }).n,
+
+    countUndecided: (userId: string, policyId: string): number =>
+      (undecidedStmt.get(userId, policyId) as { n: number }).n,
+
+    getActiveFor: (userId: string, policyId: string): JitGrant | null => {
+      const row = activeForStmt.get(userId, policyId) as GrantRow | undefined;
+      return row ? rowToGrant(row) : null;
+    },
 
     activeUserIdsForPolicy: (policyId: string): string[] =>
       (activeUserIdsStmt.all(policyId) as { uid: string }[]).map((r) => r.uid),

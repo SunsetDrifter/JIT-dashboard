@@ -9,6 +9,7 @@ export const GrantStatus = z.enum([
   "denied",
   "revoked",
   "cancelled",
+  "superseded",
   "failed",
 ]);
 export type GrantStatus = z.infer<typeof GrantStatus>;
@@ -65,6 +66,8 @@ export interface JitGrant {
   policyId: string;
   /** Resolved policy name, attached when grants are listed for the UI. */
   policyName?: string;
+  /** When set, this grant renews/replaces the referenced grant on activation. */
+  supersedesGrantId?: string;
   requesterUserId: string;
   requesterEmail?: string;
   requestedDurationMinutes: number;
