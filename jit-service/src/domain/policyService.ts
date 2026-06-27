@@ -13,8 +13,8 @@ export interface PolicyServiceDeps {
   nb: NetbirdClient;
   marker: string;
   defaultPendingTtlMinutes: number;
-  /** Injected by Phase 4 wiring so deleting a JIT policy cascades to active grants. */
-  revokeActiveGrantsForPolicy?: (policyId: string, reason: string) => Promise<void>;
+  /** Injected by Phase 4 wiring so deleting a JIT policy voids all its grants. */
+  terminateGrantsForPolicy?: (policyId: string, reason: string) => Promise<void>;
 }
 
 const DEFAULT_TRAFFIC: Traffic = { protocol: "all" };
@@ -88,9 +88,10 @@ export function createPolicyService(deps: PolicyServiceDeps) {
     async remove(id: string, caller: Caller): Promise<void> {
       const policy = repo.getById(id);
       if (!policy) return; // idempotent
-      // Cascade: revoke active grants before tearing down the backing objects.
-      if (deps.revokeActiveGrantsForPolicy) {
-        await deps.revokeActiveGrantsForPolicy(id, "policy_deleted");
+      // Cascade: void every grant (active + pending) before tearing down the
+      // backing objects, so no request is left pointing at a deleted policy.
+      if (deps.terminateGrantsForPolicy) {
+        await deps.terminateGrantsForPolicy(id, "policy_deleted");
       }
       await deprovisionBacking(nb, policy);
       repo.remove(id);

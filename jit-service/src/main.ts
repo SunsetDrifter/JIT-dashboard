@@ -86,7 +86,7 @@ async function main(): Promise<void> {
     nb,
     marker: config.groupMarker,
     defaultPendingTtlMinutes: config.pendingTtlMinutes,
-    revokeActiveGrantsForPolicy: (id, reason) => grantService.revokeAllForPolicy(id, reason),
+    terminateGrantsForPolicy: (id, reason) => grantService.terminateAllForPolicy(id, reason),
   });
 
   // Empty-DB guard: alert (don't auto-purge) if the DB looks freshly empty but

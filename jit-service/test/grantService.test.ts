@@ -131,11 +131,18 @@ describe("grantService", () => {
     expect((await s3.svc.revoke(g3.id, admin, "manual")).status).toBe("revoked");
   });
 
-  it("cascades revoke for a policy", async () => {
+  it("voids active and pending grants when a policy is deleted", async () => {
     const { svc, grantRepo, policy } = setup();
-    const g = svc.requestAccess(policy.id, requester, { durationMinutes: 60 });
-    await svc.approve(g.id, admin);
-    await svc.revokeAllForPolicy(policy.id, "policy_deleted");
-    expect(grantRepo.getById(g.id)!.status).toBe("revoked");
+    const active = svc.requestAccess(policy.id, requester, { durationMinutes: 60 });
+    await svc.approve(active.id, admin);
+    // A second eligible requester leaves a *pending* grant on the same policy.
+    const pending = svc.requestAccess(policy.id, { ...requester, userId: "u2" }, { durationMinutes: 60 });
+    expect(pending.status).toBe("pending");
+
+    await svc.terminateAllForPolicy(policy.id, "policy_deleted");
+
+    // Active membership is revoked; the pending zombie is cancelled (not left to 409 on approve).
+    expect(grantRepo.getById(active.id)!.status).toBe("revoked");
+    expect(grantRepo.getById(pending.id)!.status).toBe("cancelled");
   });
 });

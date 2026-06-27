@@ -61,7 +61,7 @@ const service = (nb: NetbirdClient, revoke?: (id: string, reason: string) => Pro
     nb,
     marker: "jit:",
     defaultPendingTtlMinutes: 1440,
-    revokeActiveGrantsForPolicy: revoke,
+    terminateGrantsForPolicy: revoke,
   });
 
 describe("policyService", () => {

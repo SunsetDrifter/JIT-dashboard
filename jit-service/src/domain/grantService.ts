@@ -244,11 +244,26 @@ export function createGrantService(deps: GrantServiceDeps) {
       return deactivate(grant, "revoked", reason, caller);
     },
 
-    /** Cascade for JIT-policy deletion (system actor). */
-    async revokeAllForPolicy(policyId: string, reason: string): Promise<void> {
-      const active = grantRepo.listByPolicy(policyId).filter((g) => g.status === "active");
-      for (const grant of active) {
-        await deactivate(grant, "revoked", reason);
+    /**
+     * Cascade for JIT-policy deletion (system actor): void every non-terminal
+     * grant so nothing dangles once the backing group/policy are torn down.
+     * Active/failed grants are deactivated (membership removed); pending/approved
+     * requests are cancelled (no membership to remove). Without this, pending
+     * requests for a deleted policy become un-actionable zombies — approve then
+     * 409s on the missing policy and they linger until the pending TTL.
+     */
+    async terminateAllForPolicy(policyId: string, reason: string): Promise<void> {
+      for (const grant of grantRepo.listByPolicy(policyId)) {
+        if (grant.status === "active" || grant.status === "failed") {
+          await deactivate(grant, "revoked", reason);
+        } else if (grant.status === "pending" || grant.status === "approved") {
+          grantRepo.update(grant.id, {
+            status: "cancelled",
+            decidedAt: iso(),
+            denialReason: reason,
+          });
+          audit.append({ action: "grant.cancel", policyId, grantId: grant.id, detail: { reason } });
+        }
       }
     },
 
