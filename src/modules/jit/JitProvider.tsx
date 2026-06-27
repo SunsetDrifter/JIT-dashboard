@@ -201,7 +201,9 @@ export function JitProvider({ children }: { children: React.ReactNode }) {
   const value: JitContextValue = {
     me: me.data,
     isAdmin: me.data?.isAdmin ?? isOwnerOrAdmin,
-    propagationEnabled: me.data?.propagationEnabled ?? true,
+    // Optimistic while /me is still loading, but fall to false on a real error so
+    // the "propagation disabled" warning shows instead of silently assuming it's on.
+    propagationEnabled: me.data?.propagationEnabled ?? !me.error,
     policies: policies.data,
     resources: resources.data,
     eligiblePolicies: eligible.data,

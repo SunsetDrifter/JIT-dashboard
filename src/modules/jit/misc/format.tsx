@@ -27,8 +27,12 @@ export function formatDuration(minutes: number): string {
     const hours = minutes / 60;
     return Number.isInteger(hours) ? `${hours}h` : `${hours.toFixed(1)}h`;
   }
-  const days = minutes / 1440;
-  return Number.isInteger(days) ? `${days}d` : `${(minutes / 60).toFixed(0)}h`;
+  // >= 1 day: round to the nearest hour, then split into days + hours so the
+  // unit never flips (e.g. 1500m → "1d 1h", not "25h").
+  const totalHours = Math.round(minutes / 60);
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+  return hours === 0 ? `${days}d` : `${days}d ${hours}h`;
 }
 
 export function timeRemaining(expiresAt?: string): string {
