@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import type { Middleware } from "swr";
 import { JIT_GROUP_MARKER } from "./constants";
 
@@ -11,16 +12,24 @@ const isJitNamed = (item: unknown): boolean => {
  * policies from the shared `/groups` and `/policies` responses, so they never
  * appear on the dashboard's normal pages or pickers. JIT pages read their own
  * objects from the JIT backend, so they are unaffected.
+ *
+ * The filtered array is memoized on the source data so its reference stays
+ * stable across renders. Returning a fresh `.filter()` result every render
+ * destabilizes the app-wide SWR context and breaks React's client-side
+ * navigation transitions (they never commit).
  */
 export const jitGroupFilter: Middleware = (useSWRNext) => (key, fetcher, config) => {
   const url = typeof key === "string" ? key : Array.isArray(key) ? key[0] : undefined;
   const swr = useSWRNext(key, fetcher, config);
+  const shouldFilter = url === "/groups" || url === "/policies";
+  const data = swr.data;
 
-  if ((url === "/groups" || url === "/policies") && Array.isArray(swr.data)) {
-    return {
-      ...swr,
-      data: (swr.data as unknown[]).filter((item) => !isJitNamed(item)),
-    } as typeof swr;
-  }
-  return swr;
+  const filtered = useMemo(() => {
+    if (shouldFilter && Array.isArray(data)) {
+      return (data as unknown[]).filter((item) => !isJitNamed(item));
+    }
+    return data;
+  }, [shouldFilter, data]);
+
+  return filtered === data ? swr : ({ ...swr, data: filtered } as typeof swr);
 };
