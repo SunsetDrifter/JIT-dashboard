@@ -49,6 +49,3 @@ export function useJitCall<T>(path: string) {
     get: (suffix = "") => unwrap(call.get(suffix)),
   };
 }
-
-/** SWR mutate key matching useJitFetch's namespaced cache key. */
-export const jitKey = (path: string): [string, string] => [path, JIT_SWR_KEY];
