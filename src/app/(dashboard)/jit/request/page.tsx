@@ -134,7 +134,15 @@ export default function JitRequestPage() {
 
         <section>
           <h2 className="text-base font-medium mb-3">My requests</h2>
-          <DataTable columns={columns} data={myRequests ?? []} text="requests" />
+          {/* DataTable carries its own p-default toolbar gutter; cancel the page
+              wrapper's p-default here so the search + rows align left with the
+              headings, matching the other list pages. */}
+          <DataTable
+            columns={columns}
+            data={myRequests ?? []}
+            text="requests"
+            className="-mx-4 sm:-mx-6 md:-mx-8"
+          />
         </section>
       </div>
 
