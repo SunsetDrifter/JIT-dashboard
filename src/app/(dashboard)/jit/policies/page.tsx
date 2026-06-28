@@ -20,7 +20,7 @@ import { formatDuration } from "@/modules/jit/misc/format";
 
 export default function JitPoliciesPage() {
   const { isOwnerOrAdmin } = useLoggedInUser();
-  const { policies, propagationEnabled, deletePolicy } = useJit();
+  const { policies, propagationEnabled, serviceUnavailable, deletePolicy } = useJit();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<JitPolicy | undefined>(undefined);
   const [search, setSearch] = useState("");
@@ -82,7 +82,13 @@ export default function JitPoliciesPage() {
         </Breadcrumbs>
         <h1>JIT Policies</h1>
         <Paragraph>Define classes of temporary access. Each policy owns a hidden backing group + access policy.</Paragraph>
-        {!propagationEnabled && (
+        {serviceUnavailable && (
+          <Callout variant="error" className="max-w-2xl mt-4">
+            Couldn&apos;t reach the JIT service — its status (including group propagation) is unknown. Confirm the
+            service is running before relying on these policies.
+          </Callout>
+        )}
+        {propagationEnabled === false && (
           <Callout variant="warning" className="max-w-2xl mt-4">
             User-group propagation is disabled in account settings — JIT grants won&apos;t reach peers until you enable{" "}
             <code>groups_propagation_enabled</code>.

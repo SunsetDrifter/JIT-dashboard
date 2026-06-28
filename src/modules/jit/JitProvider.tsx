@@ -19,7 +19,11 @@ type UpdatePolicyBody = Partial<CreateJitPolicyBody> & { enabled?: boolean };
 type JitContextValue = {
   me?: JitMe;
   isAdmin: boolean;
-  propagationEnabled: boolean;
+  // undefined = unknown (/me still loading or unreachable); only `false` means the
+  // backend confirmed propagation is off. Never coerce an error to a boolean here.
+  propagationEnabled?: boolean;
+  // True when /me could not be reached, so JIT state (incl. propagation) is unknown.
+  serviceUnavailable: boolean;
   policies?: JitPolicy[];
   resources?: JitNetworkResource[];
   eligiblePolicies?: EligiblePolicy[];
@@ -201,9 +205,12 @@ export function JitProvider({ children }: { children: React.ReactNode }) {
   const value: JitContextValue = {
     me: me.data,
     isAdmin: me.data?.isAdmin ?? isOwnerOrAdmin,
-    // Optimistic while /me is still loading, but fall to false on a real error so
-    // the "propagation disabled" warning shows instead of silently assuming it's on.
-    propagationEnabled: me.data?.propagationEnabled ?? !me.error,
+    // Only the backend's explicit value counts; undefined (loading/unreachable) is
+    // "unknown", never reported as "off" — coercing an error to false produced a
+    // bogus "propagation disabled" warning whenever /me failed. Unreachability is
+    // surfaced separately via serviceUnavailable.
+    propagationEnabled: me.data?.propagationEnabled,
+    serviceUnavailable: Boolean(me.error),
     policies: policies.data,
     resources: resources.data,
     eligiblePolicies: eligible.data,
