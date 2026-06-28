@@ -2,17 +2,17 @@
 
 import Button from "@components/Button";
 import HelpText from "@components/HelpText";
-import { Input } from "@components/Input";
 import { Label } from "@components/Label";
 import { Modal, ModalClose, ModalContent, ModalFooter } from "@components/modal/Modal";
 import ModalHeader from "@components/modal/ModalHeader";
 import { Textarea } from "@components/Textarea";
 import { Clock3Icon } from "lucide-react";
 import * as React from "react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { EligiblePolicy } from "../interfaces/Jit";
 import { useJit } from "../JitProvider";
 import { formatDuration } from "../misc/format";
+import { JitDurationInput, durationToMinutes, minutesToDuration } from "../misc/JitDurationInput";
 
 type Props = {
   policy: EligiblePolicy;
@@ -23,11 +23,16 @@ type Props = {
 
 export function JitRequestModal({ policy, open, onOpenChange, mode = "request" }: Props) {
   const { requestAccess } = useJit();
-  const [minutes, setMinutes] = useState(String(Math.min(60, policy.maxDurationMinutes)));
+  const initial = useMemo(
+    () => minutesToDuration(Math.min(60, policy.maxDurationMinutes)),
+    [policy.maxDurationMinutes],
+  );
+  const [amount, setAmount] = useState(initial.amount);
+  const [unit, setUnit] = useState(initial.unit);
   const [justification, setJustification] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const value = parseInt(minutes || "0", 10);
+  const value = durationToMinutes(amount, unit);
   const invalid = !value || value < 1 || value > policy.maxDurationMinutes;
 
   const submit = async () => {
@@ -60,17 +65,15 @@ export function JitRequestModal({ policy, open, onOpenChange, mode = "request" }
           <div>
             <Label>Duration</Label>
             <HelpText>Up to a maximum of {formatDuration(policy.maxDurationMinutes)}.</HelpText>
-            <Input
-              type="number"
-              min={1}
-              max={policy.maxDurationMinutes}
-              data-testid="jit-request-duration"
-              value={minutes}
-              onChange={(e) => setMinutes(e.target.value)}
-              customPrefix={<Clock3Icon size={16} className="text-nb-gray-300" />}
-              customSuffix="minute(s)"
-              maxWidthClass="max-w-[240px]"
-              error={invalid ? `Enter a value between 1 and ${policy.maxDurationMinutes}` : undefined}
+            <JitDurationInput
+              amount={amount}
+              unit={unit}
+              onAmountChange={setAmount}
+              onUnitChange={setUnit}
+              dataTestId="jit-request-duration"
+              error={
+                invalid ? `Enter a duration between 1 minute and ${formatDuration(policy.maxDurationMinutes)}` : undefined
+              }
             />
           </div>
           <div>
