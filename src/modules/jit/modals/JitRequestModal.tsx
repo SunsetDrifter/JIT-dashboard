@@ -64,6 +64,7 @@ export function JitRequestModal({ policy, open, onOpenChange, mode = "request" }
               type="number"
               min={1}
               max={policy.maxDurationMinutes}
+              data-testid="jit-request-duration"
               value={minutes}
               onChange={(e) => setMinutes(e.target.value)}
               customPrefix={<Clock3Icon size={16} className="text-nb-gray-300" />}
@@ -78,6 +79,7 @@ export function JitRequestModal({ policy, open, onOpenChange, mode = "request" }
             </Label>
             <Textarea
               placeholder="Why do you need this access?"
+              data-testid="jit-request-justification"
               value={justification}
               onChange={(e) => setJustification(e.target.value)}
               rows={3}
@@ -89,7 +91,7 @@ export function JitRequestModal({ policy, open, onOpenChange, mode = "request" }
             <ModalClose asChild>
               <Button variant="secondary">Cancel</Button>
             </ModalClose>
-            <Button variant="primary" disabled={invalid || submitting} onClick={submit}>
+            <Button variant="primary" data-testid="jit-request-submit" disabled={invalid || submitting} onClick={submit}>
               {mode === "extend" ? "Submit extension" : "Submit request"}
             </Button>
           </div>

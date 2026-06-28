@@ -57,10 +57,15 @@ export default function JitPoliciesPage() {
       header: "",
       cell: ({ row }) => (
         <div className="flex gap-2 justify-end">
-          <Button variant="secondary" size="xs" onClick={() => openEdit(row.original)}>
+          <Button variant="secondary" size="xs" data-testid="jit-policy-edit" onClick={() => openEdit(row.original)}>
             Edit
           </Button>
-          <Button variant="danger-outline" size="xs" onClick={() => deletePolicy(row.original.id, row.original.name)}>
+          <Button
+            variant="danger-outline"
+            size="xs"
+            data-testid="jit-policy-delete"
+            onClick={() => deletePolicy(row.original.id, row.original.name)}
+          >
             Delete
           </Button>
         </div>
@@ -87,7 +92,12 @@ export default function JitPoliciesPage() {
 
       <RestrictedAccess hasAccess={isOwnerOrAdmin} page="JIT Policies">
         <div className="p-default flex items-center gap-3 mb-3">
-          <Button variant="primary" className="h-[42px] shrink-0" onClick={openCreate}>
+          <Button
+            variant="primary"
+            className="h-[42px] shrink-0"
+            data-testid="create-jit-policy"
+            onClick={openCreate}
+          >
             <PlusCircleIcon size={16} />
             Create JIT policy
           </Button>

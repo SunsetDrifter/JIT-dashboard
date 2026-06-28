@@ -67,10 +67,10 @@ export default function JitApprovalsPage() {
       header: "",
       cell: ({ row }) => (
         <div className="flex gap-2 justify-end">
-          <Button variant="primary" size="xs" onClick={() => approveRequest(row.original.id)}>
+          <Button variant="primary" size="xs" data-testid="jit-approve" onClick={() => approveRequest(row.original.id)}>
             Approve
           </Button>
-          <Button variant="secondary" size="xs" onClick={() => denyRequest(row.original.id)}>
+          <Button variant="secondary" size="xs" data-testid="jit-deny" onClick={() => denyRequest(row.original.id)}>
             Deny
           </Button>
         </div>
@@ -88,10 +88,10 @@ export default function JitApprovalsPage() {
       header: "",
       cell: ({ row }) => (
         <div className="flex gap-2 justify-end">
-          <Button variant="secondary" size="xs" onClick={() => setExtendTarget(row.original)}>
+          <Button variant="secondary" size="xs" data-testid="jit-grant-extend" onClick={() => setExtendTarget(row.original)}>
             Extend
           </Button>
-          <Button variant="danger-outline" size="xs" onClick={() => revokeGrant(row.original.id)}>
+          <Button variant="danger-outline" size="xs" data-testid="jit-revoke" onClick={() => revokeGrant(row.original.id)}>
             Revoke
           </Button>
         </div>
@@ -117,6 +117,7 @@ export default function JitApprovalsPage() {
               {(["pending", "active"] as const).map((t) => (
                 <button
                   key={t}
+                  data-testid={`jit-tab-${t}`}
                   onClick={() => setTab(t)}
                   className={cn(
                     "inline-flex items-center h-[42px] px-4 rounded-md text-sm capitalize whitespace-nowrap transition-colors",

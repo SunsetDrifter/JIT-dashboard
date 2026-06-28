@@ -57,6 +57,7 @@ export function JitExtendModal({ grant, maxDurationMinutes, open, onOpenChange }
             type="number"
             min={1}
             max={maxDurationMinutes}
+            data-testid="jit-extend-duration"
             value={minutes}
             onChange={(e) => setMinutes(e.target.value)}
             customPrefix={<Clock3Icon size={16} className="text-nb-gray-300" />}
@@ -70,7 +71,7 @@ export function JitExtendModal({ grant, maxDurationMinutes, open, onOpenChange }
             <ModalClose asChild>
               <Button variant="secondary">Cancel</Button>
             </ModalClose>
-            <Button variant="primary" disabled={invalid || submitting} onClick={submit}>
+            <Button variant="primary" data-testid="jit-extend-submit" disabled={invalid || submitting} onClick={submit}>
               Extend access
             </Button>
           </div>

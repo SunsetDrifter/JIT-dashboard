@@ -126,12 +126,12 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
         <div className="px-8 py-6 flex flex-col gap-6 max-h-[65vh] overflow-y-auto">
           <div>
             <Label>Name</Label>
-            <Input placeholder="e.g. Prod database (break-glass)" value={name} onChange={(e) => setName(e.target.value)} />
+            <Input data-testid="jit-policy-name" placeholder="e.g. Prod database (break-glass)" value={name} onChange={(e) => setName(e.target.value)} />
           </div>
 
           <div>
             <Label>Description <span className="text-nb-gray-400">(optional)</span></Label>
-            <Textarea placeholder="What this grants and when to use it" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
+            <Textarea data-testid="jit-policy-description" placeholder="What this grants and when to use it" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
           </div>
 
           <div>
@@ -144,6 +144,7 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
                   <button
                     type="button"
                     key={r.id}
+                    data-testid="jit-resource-option"
                     onClick={() => toggleResource(r.id)}
                     className={cn(
                       "flex items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition-colors",
@@ -172,6 +173,7 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
             <Input
               type="number"
               min={1}
+              data-testid="jit-policy-duration"
               value={maxMinutes}
               onChange={(e) => setMaxMinutes(e.target.value)}
               customPrefix={<Clock3Icon size={16} className="text-nb-gray-300" />}
@@ -222,9 +224,9 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
         <ModalFooter className="items-center">
           <div className="flex gap-3 w-full justify-end">
             <ModalClose asChild>
-              <Button variant="secondary">Cancel</Button>
+              <Button variant="secondary" data-testid="jit-policy-cancel">Cancel</Button>
             </ModalClose>
-            <Button variant="primary" disabled={invalid || submitting} onClick={submit}>
+            <Button variant="primary" data-testid="jit-policy-submit" disabled={invalid || submitting} onClick={submit}>
               {isEdit ? "Save changes" : "Create JIT policy"}
             </Button>
           </div>

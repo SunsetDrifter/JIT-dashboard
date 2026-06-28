@@ -11,30 +11,30 @@ import { rowWith, dialog, confirmDialog, uniqueName } from "./helpers/jit";
  */
 test.describe.serial("JIT access lifecycle", () => {
   const policyName = uniqueName("e2e-life");
-  const RESOURCE = /jit-test-res/; // a network resource present in the local env
+  const RESOURCE = "jit-test-res"; // a network resource present in the local env
 
   test("admin creates a JIT policy targeting a resource", async ({ page }) => {
     await page.goto("/jit/policies");
-    await page.getByRole("button", { name: "Create JIT policy" }).click();
+    await page.getByTestId("create-jit-policy").click();
 
     const d = dialog(page);
-    await d.getByPlaceholder("e.g. Prod database (break-glass)").fill(policyName);
-    await d.getByRole("button", { name: RESOURCE }).click(); // select the resource
+    await d.getByTestId("jit-policy-name").fill(policyName);
+    await d.getByTestId("jit-resource-option").filter({ hasText: RESOURCE }).click();
     // Default max duration (240) and "anyone can request" are fine.
-    await d.getByRole("button", { name: "Create JIT policy" }).click({ force: true });
+    await d.getByTestId("jit-policy-submit").click({ force: true });
 
     await expect(rowWith(page, policyName)).toBeVisible();
   });
 
   test("user requests access; it appears as pending", async ({ page }) => {
     await page.goto("/jit/request");
-    const card = page.locator("div.rounded-md.border", { hasText: policyName });
+    const card = page.getByTestId("jit-available-policy").filter({ hasText: policyName });
     await expect(card).toBeVisible();
-    await card.getByRole("button", { name: "Request" }).click();
+    await card.getByTestId("jit-request-open").click();
 
     const d = dialog(page);
-    await d.getByPlaceholder("Why do you need this access?").fill("e2e: automated lifecycle test");
-    await d.getByRole("button", { name: "Submit request" }).click({ force: true });
+    await d.getByTestId("jit-request-justification").fill("e2e: automated lifecycle test");
+    await d.getByTestId("jit-request-submit").click({ force: true });
 
     // "My requests" now shows a pending row for this policy.
     await expect(rowWith(page, policyName).filter({ hasText: /pending/i })).toBeVisible();
@@ -44,19 +44,19 @@ test.describe.serial("JIT access lifecycle", () => {
     await page.goto("/jit/approvals"); // defaults to the Pending tab
     const pendingRow = rowWith(page, policyName);
     await expect(pendingRow).toBeVisible();
-    await pendingRow.getByRole("button", { name: "Approve" }).click({ force: true });
+    await pendingRow.getByTestId("jit-approve").click({ force: true });
 
     // Switch to Active grants and confirm the grant is now active.
-    await page.getByRole("button", { name: /active grants/i }).click();
+    await page.getByTestId("jit-tab-active").click();
     await expect(rowWith(page, policyName)).toBeVisible();
   });
 
   test("admin revokes the active grant", async ({ page }) => {
     await page.goto("/jit/approvals");
-    await page.getByRole("button", { name: /active grants/i }).click();
+    await page.getByTestId("jit-tab-active").click();
     const activeRow = rowWith(page, policyName);
     await expect(activeRow).toBeVisible();
-    await activeRow.getByRole("button", { name: "Revoke" }).click({ force: true });
+    await activeRow.getByTestId("jit-revoke").click({ force: true });
     await confirmDialog(page);
 
     await expect(rowWith(page, policyName)).toHaveCount(0);
@@ -66,7 +66,7 @@ test.describe.serial("JIT access lifecycle", () => {
     await page.goto("/jit/policies");
     const policyRow = rowWith(page, policyName);
     await expect(policyRow).toBeVisible();
-    await policyRow.getByRole("button", { name: "Delete" }).click({ force: true });
+    await policyRow.getByTestId("jit-policy-delete").click({ force: true });
     await confirmDialog(page);
 
     await expect(rowWith(page, policyName)).toHaveCount(0);

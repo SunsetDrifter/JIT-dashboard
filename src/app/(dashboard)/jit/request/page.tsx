@@ -51,7 +51,7 @@ export default function JitRequestPage() {
         const g = row.original;
         if (g.status === "pending")
           return (
-            <Button variant="secondary" size="xs" onClick={() => cancelRequest(g.id)}>
+            <Button variant="secondary" size="xs" data-testid="jit-request-cancel" onClick={() => cancelRequest(g.id)}>
               Cancel
             </Button>
           );
@@ -65,6 +65,7 @@ export default function JitRequestPage() {
               <Button
                 variant="secondary"
                 size="xs"
+                data-testid="jit-grant-extend"
                 disabled={!elig || pendingExists}
                 onClick={() => elig && setExtendPolicy(elig)}
                 title={
@@ -77,7 +78,7 @@ export default function JitRequestPage() {
               >
                 Extend
               </Button>
-              <Button variant="danger-outline" size="xs" onClick={() => endGrant(g.id)}>
+              <Button variant="danger-outline" size="xs" data-testid="jit-grant-end" onClick={() => endGrant(g.id)}>
                 End now
               </Button>
             </div>
@@ -105,7 +106,7 @@ export default function JitRequestPage() {
           {eligiblePolicies && eligiblePolicies.length > 0 ? (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {eligiblePolicies.map((p) => (
-                <div key={p.id} className="rounded-md border border-nb-gray-800 p-4 flex flex-col gap-3 bg-nb-gray-940">
+                <div key={p.id} data-testid="jit-available-policy" className="rounded-md border border-nb-gray-800 p-4 flex flex-col gap-3 bg-nb-gray-940">
                   <div>
                     <div className="font-medium text-nb-gray-100">{p.name}</div>
                     {p.description && <div className="text-sm text-nb-gray-400 mt-1">{p.description}</div>}
@@ -118,7 +119,7 @@ export default function JitRequestPage() {
                       <Clock3Icon size={13} /> up to {formatDuration(p.maxDurationMinutes)}
                     </span>
                   </div>
-                  <Button variant="primary" size="sm" onClick={() => setSelected(p)}>
+                  <Button variant="primary" size="sm" data-testid="jit-request-open" onClick={() => setSelected(p)}>
                     Request
                   </Button>
                 </div>
