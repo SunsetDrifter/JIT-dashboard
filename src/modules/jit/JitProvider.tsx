@@ -32,6 +32,7 @@ type JitContextValue = {
   activeGrants?: JitGrant[];
   isLoading: boolean;
   refreshAdmin: () => Promise<void>;
+  refreshMine: () => Promise<void>;
   createPolicy: (body: CreateJitPolicyBody) => Promise<void>;
   updatePolicy: (id: string, body: UpdatePolicyBody) => Promise<void>;
   deletePolicy: (id: string, name: string) => Promise<void>;
@@ -66,6 +67,10 @@ export function JitProvider({ children }: { children: React.ReactNode }) {
 
   const refreshAdmin = (): Promise<void> =>
     Promise.all([policies.mutate(), pending.mutate(), active.mutate()]).then(() => undefined);
+
+  // Request Access page: refetch what the requester sees (eligible policies + own requests).
+  const refreshMine = (): Promise<void> =>
+    Promise.all([eligible.mutate(), mine.mutate()]).then(() => undefined);
 
   const run = (promise: Promise<unknown>, title: string, description: string, loadingMessage: string) => {
     notify({ title, description, loadingMessage, promise: promise as Promise<unknown> });
@@ -219,6 +224,7 @@ export function JitProvider({ children }: { children: React.ReactNode }) {
     activeGrants: active.data,
     isLoading: me.isLoading || mine.isLoading,
     refreshAdmin,
+    refreshMine,
     createPolicy,
     updatePolicy,
     deletePolicy,

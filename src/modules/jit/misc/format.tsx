@@ -1,7 +1,7 @@
 import Badge from "@components/Badge";
 import dayjs from "dayjs";
 import * as React from "react";
-import type { GrantStatus } from "../interfaces/Jit";
+import type { GrantStatus, JitGrant } from "../interfaces/Jit";
 
 type BadgeVariant = NonNullable<React.ComponentProps<typeof Badge>["variant"]>;
 
@@ -45,4 +45,24 @@ export function timeRemaining(expiresAt?: string): string {
 
 export function formatDateTime(iso?: string): string {
   return iso ? dayjs(iso).format("MMM D, YYYY HH:mm") : "—";
+}
+
+/**
+ * The approval outcome of a request (distinct from its current status): when it
+ * was decided and whether it was approved or denied. Pending = not yet decided;
+ * cancelled = withdrawn before any decision.
+ */
+export function JitOutcomeCell({ grant }: { grant: JitGrant }) {
+  if (grant.status === "pending") return <span className="text-nb-gray-400">Awaiting decision</span>;
+  if (grant.status === "cancelled") return <span className="text-nb-gray-400">Withdrawn</span>;
+  const denied = grant.status === "denied";
+  return (
+    <span
+      className="flex flex-col leading-tight"
+      title={denied && grant.denialReason ? grant.denialReason : undefined}
+    >
+      <span className={denied ? "text-red-400" : "text-green-400"}>{denied ? "Denied" : "Approved"}</span>
+      <span className="text-xs text-nb-gray-400">{formatDateTime(grant.decidedAt)}</span>
+    </span>
+  );
 }

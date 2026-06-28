@@ -6,6 +6,7 @@ import Button from "@components/Button";
 import { Callout } from "@components/Callout";
 import Paragraph from "@components/Paragraph";
 import { DataTable } from "@components/table/DataTable";
+import DataTableRefreshButton from "@components/table/DataTableRefreshButton";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Clock3Icon, ServerIcon, ZapIcon } from "lucide-react";
 import * as React from "react";
@@ -14,10 +15,10 @@ import PageContainer from "@/layouts/PageContainer";
 import type { EligiblePolicy, JitGrant } from "@/modules/jit/interfaces/Jit";
 import { useJit } from "@/modules/jit/JitProvider";
 import { JitRequestModal } from "@/modules/jit/modals/JitRequestModal";
-import { formatDateTime, formatDuration, JitStatusBadge, timeRemaining } from "@/modules/jit/misc/format";
+import { formatDateTime, formatDuration, JitOutcomeCell, JitStatusBadge, timeRemaining } from "@/modules/jit/misc/format";
 
 export default function JitRequestPage() {
-  const { eligiblePolicies, myRequests, cancelRequest, endGrant } = useJit();
+  const { eligiblePolicies, myRequests, cancelRequest, endGrant, refreshMine } = useJit();
   const [selected, setSelected] = useState<EligiblePolicy | null>(null);
   const [extendPolicy, setExtendPolicy] = useState<EligiblePolicy | null>(null);
 
@@ -39,6 +40,7 @@ export default function JitRequestPage() {
     { accessorKey: "status", header: "Status", cell: ({ row }) => <JitStatusBadge status={row.original.status} /> },
     { accessorKey: "requestedDurationMinutes", header: "Duration", cell: ({ row }) => formatDuration(row.original.requestedDurationMinutes) },
     { accessorKey: "requestedAt", header: "Requested", cell: ({ row }) => formatDateTime(row.original.requestedAt) },
+    { id: "outcome", header: "Outcome", cell: ({ row }) => <JitOutcomeCell grant={row.original} /> },
     {
       id: "expires",
       header: "Expires",
@@ -127,7 +129,10 @@ export default function JitRequestPage() {
         </section>
 
         <section>
-          <h2 className="text-base font-medium mb-3">My requests</h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-base font-medium">My requests</h2>
+            <DataTableRefreshButton onClick={() => void refreshMine()} />
+          </div>
           {/* DataTable carries its own p-default toolbar gutter; cancel the page
               wrapper's p-default here so the search + rows align left with the
               headings, matching the other list pages. */}
