@@ -8,15 +8,16 @@ import { Label } from "@components/Label";
 import { Modal, ModalClose, ModalContent, ModalFooter } from "@components/modal/Modal";
 import ModalHeader from "@components/modal/ModalHeader";
 import { PeerGroupSelector } from "@components/PeerGroupSelector";
+import { SelectDropdown } from "@components/select/SelectDropdown";
 import { Textarea } from "@components/Textarea";
-import { cn } from "@utils/helpers";
-import { CheckIcon, Clock3Icon, ServerIcon, ShieldCheckIcon } from "lucide-react";
+import { ServerIcon, ShieldCheckIcon, XIcon } from "lucide-react";
 import * as React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useGroups } from "@/contexts/GroupsProvider";
 import type { Group } from "@/interfaces/Group";
 import type { CreateJitPolicyBody, JitPolicy } from "../interfaces/Jit";
 import { useJit } from "../JitProvider";
+import { JitDurationInput, durationToMinutes, minutesToDuration } from "../misc/JitDurationInput";
 
 type Props = {
   open: boolean;
@@ -32,7 +33,8 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [resourceIds, setResourceIds] = useState<string[]>([]);
-  const [maxMinutes, setMaxMinutes] = useState("240");
+  const [maxAmount, setMaxAmount] = useState(() => minutesToDuration(240).amount);
+  const [maxUnit, setMaxUnit] = useState(() => minutesToDuration(240).unit);
   const [restrictRequesters, setRestrictRequesters] = useState(false);
   const [requesterGroups, setRequesterGroups] = useState<Group[]>([]);
   const [restrictApprovers, setRestrictApprovers] = useState(false);
@@ -48,7 +50,9 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
     setName(policy?.name ?? "");
     setDescription(policy?.description ?? "");
     setResourceIds(policy?.targetResourceIds ?? []);
-    setMaxMinutes(String(policy?.maxDurationMinutes ?? 240));
+    const dur = minutesToDuration(policy?.maxDurationMinutes ?? 240);
+    setMaxAmount(dur.amount);
+    setMaxUnit(dur.unit);
     const rb = policy?.requestableBy;
     setRestrictRequesters(rb?.mode === "groups");
     setRequesterGroups(rb?.mode === "groups" ? resolveGroups(rb.groupIds) : []);
@@ -58,7 +62,7 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, policy]);
 
-  const max = parseInt(maxMinutes || "0", 10);
+  const max = durationToMinutes(maxAmount, maxUnit);
   // Only groups that resolve to a real id count toward eligibility — the group
   // selector lets you type a brand-new name (no id), which is meaningless here.
   const requesterGroupIds = useMemo(
@@ -73,6 +77,24 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
   // isn't part of users' auto_groups, so it can't gate eligibility — "everyone"
   // is the toggle-off state); JIT's own backing groups are already hidden.
   const hasUserGroups = useMemo(() => (groups ?? []).some((g) => g.name !== "All"), [groups]);
+
+  // Resource picker: the searchable "add" dropdown lists only unpicked resources;
+  // picked ones render as removable chips below.
+  const resourceOptions = useMemo(
+    () =>
+      (resources ?? [])
+        .filter((r) => !resourceIds.includes(r.id))
+        .map((r) => ({
+          value: r.id,
+          label: r.address ? `${r.name} (${r.address})` : r.name,
+          searchValue: `${r.name} ${r.address ?? ""}`,
+        })),
+    [resources, resourceIds],
+  );
+  const selectedResources = useMemo(
+    () => (resources ?? []).filter((r) => resourceIds.includes(r.id)),
+    [resources, resourceIds],
+  );
 
   const invalid = useMemo(() => {
     if (name.trim().length === 0) return true;
@@ -136,31 +158,42 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
 
           <div>
             <Label>Network resources</Label>
-            <HelpText>Select the resources this access grants.</HelpText>
-            <div className="flex flex-col gap-1.5 mt-1">
-              {(resources ?? []).map((r) => {
-                const selected = resourceIds.includes(r.id);
-                return (
-                  <button
-                    type="button"
-                    key={r.id}
-                    data-testid="jit-resource-option"
-                    onClick={() => toggleResource(r.id)}
-                    className={cn(
-                      "flex items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition-colors",
-                      selected
-                        ? "border-netbird bg-netbird/10 text-netbird"
-                        : "border-nb-gray-800 hover:border-nb-gray-700 text-nb-gray-200",
-                    )}
-                  >
-                    <span className="flex items-center gap-2">
-                      <ServerIcon size={14} /> {r.name}
-                      {r.address ? <span className="text-nb-gray-400">({r.address})</span> : null}
-                    </span>
-                    {selected ? <CheckIcon size={15} /> : null}
-                  </button>
-                );
-              })}
+            <HelpText>Search and add the resources this access grants.</HelpText>
+            <div className="mt-1 flex flex-col gap-2">
+              <SelectDropdown
+                value=""
+                onChange={(id) => toggleResource(id)}
+                options={resourceOptions}
+                showSearch
+                placeholder="Add a network resource…"
+                searchPlaceholder="Search resources…"
+                data-testid="jit-resource-select"
+              />
+              {selectedResources.length > 0 && (
+                <div className="flex flex-col gap-1.5">
+                  {selectedResources.map((r) => (
+                    <div
+                      key={r.id}
+                      data-testid="jit-resource-selected"
+                      className="flex items-center justify-between rounded-md border border-nb-gray-800 bg-nb-gray-940 px-3 py-2 text-sm text-nb-gray-200"
+                    >
+                      <span className="flex items-center gap-2">
+                        <ServerIcon size={14} /> {r.name}
+                        {r.address ? <span className="text-nb-gray-400">({r.address})</span> : null}
+                      </span>
+                      <button
+                        type="button"
+                        aria-label={`Remove ${r.name}`}
+                        data-testid="jit-resource-remove"
+                        onClick={() => toggleResource(r.id)}
+                        className="text-nb-gray-400 transition-colors hover:text-red-400"
+                      >
+                        <XIcon size={15} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
               {(resources ?? []).length === 0 && (
                 <HelpText>No network resources found. Create some in Networks first.</HelpText>
               )}
@@ -170,15 +203,13 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
           <div>
             <Label>Maximum duration</Label>
             <HelpText>The longest a user may request access for.</HelpText>
-            <Input
-              type="number"
-              min={1}
-              data-testid="jit-policy-duration"
-              value={maxMinutes}
-              onChange={(e) => setMaxMinutes(e.target.value)}
-              customPrefix={<Clock3Icon size={16} className="text-nb-gray-300" />}
-              customSuffix="minute(s)"
-              maxWidthClass="max-w-[240px]"
+            <JitDurationInput
+              amount={maxAmount}
+              unit={maxUnit}
+              onAmountChange={setMaxAmount}
+              onUnitChange={setMaxUnit}
+              dataTestId="jit-policy-duration"
+              error={max < 1 ? "Enter a duration of at least 1 minute" : undefined}
             />
           </div>
 

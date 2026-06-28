@@ -13,14 +13,17 @@ import { RestrictedAccess } from "@components/ui/RestrictedAccess";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ClockIcon, ShieldCheckIcon, ZapIcon } from "lucide-react";
 import * as React from "react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import useFetchApi from "@utils/api";
 import useUrlTab from "@/hooks/useUrlTab";
 import { useLoggedInUser } from "@/contexts/UsersProvider";
 import PageContainer from "@/layouts/PageContainer";
+import { User } from "@/interfaces/User";
 import type { JitGrant } from "@/modules/jit/interfaces/Jit";
 import { useJit } from "@/modules/jit/JitProvider";
 import { JitExtendModal } from "@/modules/jit/modals/JitExtendModal";
 import { formatDateTime, formatDuration, timeRemaining } from "@/modules/jit/misc/format";
+import UserNameCell from "@/modules/users/table-cells/UserNameCell";
 
 export default function JitApprovalsPage() {
   const { isOwnerOrAdmin } = useLoggedInUser();
@@ -29,6 +32,13 @@ export default function JitApprovalsPage() {
   const [search, setSearch] = useState("");
   const [policyFilter, setPolicyFilter] = useState("");
   const [extendTarget, setExtendTarget] = useState<JitGrant | null>(null);
+
+  const { data: users } = useFetchApi<User[]>("/users?service_user=false");
+
+  const usersById = useMemo<Map<string, User>>(() => {
+    if (!users) return new Map();
+    return new Map(users.map((u) => [u.id, u]));
+  }, [users]);
 
   const requester = (g: JitGrant) => g.requesterEmail ?? g.requesterUserId;
   const policyName = (g: JitGrant) => g.policyName ?? policies?.find((p) => p.id === g.policyId)?.name ?? "—";
@@ -80,7 +90,15 @@ export default function JitApprovalsPage() {
   ];
 
   const activeColumns: ColumnDef<JitGrant>[] = [
-    { id: "requester", header: "User", cell: ({ row }) => requester(row.original) },
+    {
+      id: "requester",
+      header: "User",
+      cell: ({ row }) => {
+        const user = usersById.get(row.original.requesterUserId);
+        if (user) return <UserNameCell user={user} />;
+        return <span>{row.original.requesterEmail ?? row.original.requesterUserId}</span>;
+      },
+    },
     { id: "policy", header: "Policy", cell: ({ row }) => policyName(row.original) },
     { accessorKey: "activatedAt", header: "Granted", cell: ({ row }) => formatDateTime(row.original.activatedAt) },
     { id: "expires", header: "Expires", cell: ({ row }) => timeRemaining(row.original.expiresAt) },
