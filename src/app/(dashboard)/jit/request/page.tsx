@@ -1,6 +1,7 @@
 "use client";
 
 import Badge from "@components/Badge";
+import { SmallBadge } from "@components/ui/SmallBadge";
 import Breadcrumbs from "@components/Breadcrumbs";
 import Button from "@components/Button";
 import { Callout } from "@components/Callout";
@@ -96,7 +97,12 @@ export default function JitRequestPage() {
                 return (
                   <div key={p.id} data-testid="jit-available-policy" className="rounded-md border border-nb-gray-800 p-4 flex flex-col gap-3 bg-nb-gray-940">
                     <div>
-                      <div className="font-medium text-nb-gray-100">{p.name}</div>
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="font-medium text-nb-gray-100">{p.name}</span>
+                        {hasActiveGrant && (
+                          <SmallBadge variant="green" size="md" text="Approved" />
+                        )}
+                      </div>
                       {p.description && <div className="text-sm text-nb-gray-400 mt-1">{p.description}</div>}
                     </div>
                     <div className="text-xs text-nb-gray-400 flex items-center gap-3">
