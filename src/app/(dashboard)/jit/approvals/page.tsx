@@ -8,12 +8,13 @@ import { DataTable } from "@components/table/DataTable";
 import DataTableRefreshButton from "@components/table/DataTableRefreshButton";
 import DataTableGlobalSearch from "@components/table/DataTableGlobalSearch";
 import { SelectDropdown } from "@components/select/SelectDropdown";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@components/Tabs";
 import { RestrictedAccess } from "@components/ui/RestrictedAccess";
-import { cn } from "@utils/helpers";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ZapIcon } from "lucide-react";
+import { ClockIcon, ShieldCheckIcon, ZapIcon } from "lucide-react";
 import * as React from "react";
 import { useState } from "react";
+import useUrlTab from "@/hooks/useUrlTab";
 import { useLoggedInUser } from "@/contexts/UsersProvider";
 import PageContainer from "@/layouts/PageContainer";
 import type { JitGrant } from "@/modules/jit/interfaces/Jit";
@@ -24,7 +25,7 @@ import { formatDateTime, formatDuration, timeRemaining } from "@/modules/jit/mis
 export default function JitApprovalsPage() {
   const { isOwnerOrAdmin } = useLoggedInUser();
   const { pendingRequests, activeGrants, policies, approveRequest, denyRequest, revokeGrant, refreshAdmin } = useJit();
-  const [tab, setTab] = useState<"pending" | "active">("pending");
+  const [tab, setTab] = useUrlTab(["pending", "active"], "pending");
   const [search, setSearch] = useState("");
   const [policyFilter, setPolicyFilter] = useState("");
   const [extendTarget, setExtendTarget] = useState<JitGrant | null>(null);
@@ -111,25 +112,24 @@ export default function JitApprovalsPage() {
       </div>
 
       <RestrictedAccess hasAccess={isOwnerOrAdmin} page="JIT Approvals">
-        <div className="p-default">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="flex gap-2 shrink-0">
-              {(["pending", "active"] as const).map((t) => (
-                <button
-                  key={t}
-                  data-testid={`jit-tab-${t}`}
-                  onClick={() => setTab(t)}
-                  className={cn(
-                    "inline-flex items-center h-[42px] px-4 rounded-md text-sm capitalize whitespace-nowrap transition-colors",
-                    tab === t ? "bg-netbird text-white" : "text-nb-gray-300 hover:bg-nb-gray-900",
-                  )}
-                >
-                  {t === "pending"
-                    ? `Pending${pendingRequests?.length ? ` (${pendingRequests.length})` : ""}`
-                    : "Active grants"}
-                </button>
-              ))}
-            </div>
+        <Tabs
+          defaultValue={tab}
+          value={tab}
+          onValueChange={setTab}
+          className="pb-0 mb-0"
+        >
+          <TabsList justify="start" className="px-8">
+            <TabsTrigger value="pending" data-testid="jit-tab-pending">
+              <ClockIcon size={14} />
+              {`Pending${pendingRequests?.length ? ` (${pendingRequests.length})` : ""}`}
+            </TabsTrigger>
+            <TabsTrigger value="active" data-testid="jit-tab-active">
+              <ShieldCheckIcon size={14} />
+              Active grants
+            </TabsTrigger>
+          </TabsList>
+
+          <div className="flex items-center gap-3 px-8 mt-4 mb-4">
             <DataTableRefreshButton onClick={() => void refreshAdmin()} />
             <div className="w-[220px] shrink-0">
               <SelectDropdown
@@ -150,22 +150,23 @@ export default function JitApprovalsPage() {
             />
           </div>
 
-          {tab === "pending" ? (
+          <TabsContent value="pending" className="px-8 pb-8">
             <DataTable
               columns={pendingColumns}
               data={(pendingRequests ?? []).filter((g) => matchesSearch(g) && matchesPolicy(g))}
               text="pending requests"
               showSearchAndFilters={false}
             />
-          ) : (
+          </TabsContent>
+          <TabsContent value="active" className="px-8 pb-8">
             <DataTable
               columns={activeColumns}
               data={(activeGrants ?? []).filter((g) => matchesSearch(g) && matchesPolicy(g))}
               text="active grants"
               showSearchAndFilters={false}
             />
-          )}
-        </div>
+          </TabsContent>
+        </Tabs>
         {extendTarget && (
           <JitExtendModal
             grant={extendTarget}
