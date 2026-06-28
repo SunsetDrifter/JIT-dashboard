@@ -148,7 +148,11 @@ export default function JitApprovalsPage() {
           </TabsList>
 
           <div className="flex items-center gap-3 px-8 mt-4 mb-4">
-            <DataTableRefreshButton onClick={() => void refreshAdmin()} />
+            <DataTableGlobalSearch
+              globalSearch={search}
+              setGlobalSearch={setSearch}
+              placeholder="Search..."
+            />
             <div className="w-[220px] shrink-0">
               <SelectDropdown
                 value={policyFilter}
@@ -161,11 +165,7 @@ export default function JitApprovalsPage() {
                 popoverMinWidth={220}
               />
             </div>
-            <DataTableGlobalSearch
-              globalSearch={search}
-              setGlobalSearch={setSearch}
-              placeholder="Search..."
-            />
+            <DataTableRefreshButton onClick={() => void refreshAdmin()} />
           </div>
 
           <TabsContent value="pending" className="px-8 pb-8">

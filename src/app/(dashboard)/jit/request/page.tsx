@@ -135,19 +135,19 @@ export default function JitRequestPage() {
         </section>
 
         <section>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-base font-medium">My requests</h2>
-            <DataTableRefreshButton onClick={() => void refreshMine()} />
-          </div>
+          <h2 className="text-base font-medium mb-3">My requests</h2>
           {/* DataTable carries its own p-default toolbar gutter; cancel the page
               wrapper's p-default here so the search + rows align left with the
-              headings, matching the other list pages. */}
+              headings, matching the other list pages. The refresh button rides in
+              the toolbar to the right of the search, matching the Peers pages. */}
           <DataTable
             columns={columns}
             data={myRequests ?? []}
             text="requests"
             className="-mx-4 sm:-mx-6 md:-mx-8"
-          />
+          >
+            {() => <DataTableRefreshButton onClick={() => void refreshMine()} />}
+          </DataTable>
         </section>
       </div>
 
