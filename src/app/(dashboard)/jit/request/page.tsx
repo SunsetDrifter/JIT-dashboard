@@ -104,7 +104,7 @@ export default function JitRequestPage() {
         <section>
           <h2 className="text-base font-medium mb-3">Available access</h2>
           {eligiblePolicies && eligiblePolicies.length > 0 ? (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-3 grid-cols-1 sm:grid-cols-[repeat(auto-fill,minmax(16rem,20rem))]">
               {eligiblePolicies.map((p) => (
                 <div key={p.id} data-testid="jit-available-policy" className="rounded-md border border-nb-gray-800 p-4 flex flex-col gap-3 bg-nb-gray-940">
                   <div>
