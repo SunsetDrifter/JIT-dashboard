@@ -1,0 +1,52 @@
+# Reference deployment for the JIT-access fork: the upstream dashboard, the JIT
+# companion backend, and a same-origin front proxy. New file — touches no
+# upstream code. Production TLS / the dashboard's own nginx may need adapting to
+# your environment; this is a working baseline (and great for local/staging).
+#
+# Required env (e.g. in a .env file next to this compose):
+#   NETBIRD_MGMT_API_ENDPOINT, AUTH_AUTHORITY, AUTH_AUDIENCE, AUTH_CLIENT_ID
+#   NETBIRD_SERVICE_TOKEN   (admin-role service-user PAT for the JIT backend)
+
+services:
+  dashboard:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    environment:
+      NETBIRD_MGMT_API_ENDPOINT: ${NETBIRD_MGMT_API_ENDPOINT}
+      AUTH_AUTHORITY: ${AUTH_AUTHORITY}
+      AUTH_CLIENT_ID: ${AUTH_CLIENT_ID}
+      AUTH_AUDIENCE: ${AUTH_AUDIENCE}
+    expose:
+      - "80"
+    restart: unless-stopped
+
+  jit-service:
+    build:
+      context: ./jit-service
+    environment:
+      NETBIRD_MGMT_API_ENDPOINT: ${NETBIRD_MGMT_API_ENDPOINT}
+      NETBIRD_SERVICE_TOKEN: ${NETBIRD_SERVICE_TOKEN}
+      AUTH_AUTHORITY: ${AUTH_AUTHORITY}
+      AUTH_AUDIENCE: ${AUTH_AUDIENCE}
+      JIT_DB_PATH: /data/jit.db
+      JIT_LISTEN_PORT: "8080"
+    volumes:
+      - jit-data:/data
+    expose:
+      - "8080"
+    restart: unless-stopped
+
+  proxy:
+    image: nginx:alpine
+    depends_on:
+      - dashboard
+      - jit-service
+    ports:
+      - "8080:80"
+    volumes:
+      - ./jit-service/deploy/proxy.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
+
+volumes:
+  jit-data:

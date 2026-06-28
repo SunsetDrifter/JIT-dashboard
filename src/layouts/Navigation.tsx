@@ -13,6 +13,7 @@ import SettingsIcon from "@/assets/icons/SettingsIcon";
 import TeamIcon from "@/assets/icons/TeamIcon";
 import { DistributorNavigation } from "@/cloud/distributor/DistributorNavigation";
 import { MSPNavigationItem } from "@/cloud/msp/MSPNavigationItem";
+import { JitNavigation } from "@/cloud/jit/JitNavigation";
 import SidebarItem from "@/components/SidebarItem";
 import { NavigationVersionInfo } from "@/components/VersionInfo";
 import { useAnnouncement } from "@/contexts/AnnouncementProvider";
@@ -136,6 +137,8 @@ export default function Navigation({
                     visible={permission.policies.read}
                   />
                 </SidebarItem>
+
+                <JitNavigation />
 
                 <NetworkNavigation />
 
