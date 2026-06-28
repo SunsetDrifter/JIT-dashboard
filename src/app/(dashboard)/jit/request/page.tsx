@@ -55,35 +55,14 @@ export default function JitRequestPage() {
               Cancel
             </Button>
           );
-        if (g.status === "active") {
-          const elig = eligiblePolicies?.find((p) => p.id === g.policyId);
-          const pendingExists = (myRequests ?? []).some(
-            (r) => r.status === "pending" && r.policyId === g.policyId,
-          );
+        if (g.status === "active")
           return (
             <div className="flex gap-2 justify-end">
-              <Button
-                variant="secondary"
-                size="xs"
-                data-testid="jit-grant-extend"
-                disabled={!elig || pendingExists}
-                onClick={() => elig && setExtendPolicy(elig)}
-                title={
-                  !elig
-                    ? "You are no longer eligible for this policy"
-                    : pendingExists
-                      ? "An extension is already pending"
-                      : undefined
-                }
-              >
-                Extend
-              </Button>
               <Button variant="danger-outline" size="xs" data-testid="jit-grant-end" onClick={() => endGrant(g.id)}>
                 End now
               </Button>
             </div>
           );
-        }
         return null;
       },
     },
@@ -105,25 +84,40 @@ export default function JitRequestPage() {
           <h2 className="text-base font-medium mb-3">Available access</h2>
           {eligiblePolicies && eligiblePolicies.length > 0 ? (
             <div className="grid gap-3 grid-cols-1 sm:grid-cols-[repeat(auto-fill,minmax(16rem,20rem))]">
-              {eligiblePolicies.map((p) => (
-                <div key={p.id} data-testid="jit-available-policy" className="rounded-md border border-nb-gray-800 p-4 flex flex-col gap-3 bg-nb-gray-940">
-                  <div>
-                    <div className="font-medium text-nb-gray-100">{p.name}</div>
-                    {p.description && <div className="text-sm text-nb-gray-400 mt-1">{p.description}</div>}
+              {eligiblePolicies.map((p) => {
+                const hasActiveGrant = (myRequests ?? []).some(
+                  (r) => r.status === "active" && r.policyId === p.id,
+                );
+                const requestPending = (myRequests ?? []).some(
+                  (r) => r.status === "pending" && r.policyId === p.id,
+                );
+                return (
+                  <div key={p.id} data-testid="jit-available-policy" className="rounded-md border border-nb-gray-800 p-4 flex flex-col gap-3 bg-nb-gray-940">
+                    <div>
+                      <div className="font-medium text-nb-gray-100">{p.name}</div>
+                      {p.description && <div className="text-sm text-nb-gray-400 mt-1">{p.description}</div>}
+                    </div>
+                    <div className="text-xs text-nb-gray-400 flex items-center gap-3">
+                      <span className="flex items-center gap-1">
+                        <ServerIcon size={13} /> {p.targetResourceIds.length} resource(s)
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Clock3Icon size={13} /> up to {formatDuration(p.maxDurationMinutes)}
+                      </span>
+                    </div>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      data-testid="jit-request-open"
+                      disabled={requestPending}
+                      title={requestPending ? "Request pending approval" : undefined}
+                      onClick={() => (hasActiveGrant ? setExtendPolicy(p) : setSelected(p))}
+                    >
+                      {hasActiveGrant ? "Request Extension" : "Request"}
+                    </Button>
                   </div>
-                  <div className="text-xs text-nb-gray-400 flex items-center gap-3">
-                    <span className="flex items-center gap-1">
-                      <ServerIcon size={13} /> {p.targetResourceIds.length} resource(s)
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Clock3Icon size={13} /> up to {formatDuration(p.maxDurationMinutes)}
-                    </span>
-                  </div>
-                  <Button variant="primary" size="sm" data-testid="jit-request-open" onClick={() => setSelected(p)}>
-                    Request
-                  </Button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <Callout variant="info" className="max-w-xl">
