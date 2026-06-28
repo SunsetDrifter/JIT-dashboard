@@ -18,7 +18,11 @@ const STATUS_VARIANT: Record<GrantStatus, BadgeVariant> = {
 };
 
 export function JitStatusBadge({ status }: { status: GrantStatus }) {
-  return <Badge variant={STATUS_VARIANT[status]}>{status}</Badge>;
+  return (
+    <Badge variant={STATUS_VARIANT[status]} className="capitalize">
+      {status}
+    </Badge>
+  );
 }
 
 export function formatDuration(minutes: number): string {

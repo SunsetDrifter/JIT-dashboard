@@ -30,7 +30,7 @@ export default function JitRequestPage() {
           {row.original.policyName ?? "—"}
           {row.original.supersedesGrantId && (
             <span>
-              <Badge variant="blue">extension</Badge>
+              <Badge variant="blue" className="capitalize">extension</Badge>
             </span>
           )}
         </span>

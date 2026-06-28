@@ -56,7 +56,7 @@ export default function JitApprovalsPage() {
       cell: ({ row }) => (
         <span className="flex items-center gap-2">
           {policyName(row.original)}
-          {row.original.supersedesGrantId && <Badge variant="blue">extension</Badge>}
+          {row.original.supersedesGrantId && <Badge variant="blue" className="capitalize">extension</Badge>}
         </span>
       ),
     },
