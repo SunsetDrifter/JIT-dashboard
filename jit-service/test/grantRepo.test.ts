@@ -13,7 +13,7 @@ describe("grantRepo extension support", () => {
     const g1 = repo.create({ policyId: "p", requesterUserId: "u", requestedDurationMinutes: 60 });
     expect(repo.getActiveFor("u", "p")).toBeNull();
 
-    repo.update(g1.id, { status: "active", activatedAt: "2026-06-26T12:00:00.000Z" });
+    repo.transitionFrom(g1.id, "pending", { status: "active", activatedAt: "2026-06-26T12:00:00.000Z" });
     expect(repo.getActiveFor("u", "p")!.id).toBe(g1.id);
 
     const g2 = repo.create({
@@ -29,18 +29,18 @@ describe("grantRepo extension support", () => {
     const repo = createGrantRepo(db, () => "2026-06-26T12:00:00.000Z");
     const g = repo.create({ policyId: "p", requesterUserId: "u", requestedDurationMinutes: 60 });
     expect(repo.countUndecided("u", "p")).toBe(1); // pending
-    repo.update(g.id, { status: "approved" });
+    repo.transitionFrom(g.id, "pending", { status: "approved" });
     expect(repo.countUndecided("u", "p")).toBe(1); // approved still counts
-    repo.update(g.id, { status: "active" });
+    repo.transitionFrom(g.id, "approved", { status: "active" });
     expect(repo.countUndecided("u", "p")).toBe(0); // active is decided
   });
 
   it("deleteTerminalOlderThan removes superseded grants past the cutoff but keeps active ones", () => {
     const repo = createGrantRepo(db, () => "2026-06-26T12:00:00.000Z");
     const old = repo.create({ policyId: "p", requesterUserId: "u", requestedDurationMinutes: 60 });
-    repo.update(old.id, { status: "superseded", revokedAt: "2020-01-01T00:00:00.000Z" });
+    repo.transitionFrom(old.id, "pending", { status: "superseded", revokedAt: "2020-01-01T00:00:00.000Z" });
     const live = repo.create({ policyId: "p", requesterUserId: "u2", requestedDurationMinutes: 60 });
-    repo.update(live.id, { status: "active" });
+    repo.transitionFrom(live.id, "pending", { status: "active" });
     const removed = repo.deleteTerminalOlderThan("2021-01-01T00:00:00.000Z");
     expect(removed).toBe(1);
     expect(repo.getById(old.id)).toBeNull();

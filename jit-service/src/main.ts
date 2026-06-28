@@ -12,6 +12,7 @@ import { createGrantRepo } from "./db/repositories/grantRepo.js";
 import { createAuditRepo } from "./db/repositories/auditRepo.js";
 import { createPolicyService } from "./domain/policyService.js";
 import { createGrantService } from "./domain/grantService.js";
+import { createGrantLifecycle } from "./domain/grantLifecycle.js";
 import { createMembership } from "./domain/membership.js";
 import { KeyedMutex } from "./lib/mutex.js";
 import { createScheduler } from "./scheduler/worker.js";
@@ -71,10 +72,13 @@ async function main(): Promise<void> {
     return propCache.value;
   };
 
+  const grantLifecycle = createGrantLifecycle({ grantRepo, audit: auditRepo });
+
   const grantService = createGrantService({
     grantRepo,
     policyRepo,
     audit: auditRepo,
+    lifecycle: grantLifecycle,
     membership,
     isPropagationEnabled: isPropagationEnabledCached,
     allowSelfApproval: config.allowSelfApproval,

@@ -4,6 +4,7 @@ import type { AuditRepo } from "../db/repositories/auditRepo.js";
 import type { GrantRepo } from "../db/repositories/grantRepo.js";
 import type { PolicyRepo } from "../db/repositories/policyRepo.js";
 import { AppError, ErrorCodes } from "../lib/errors.js";
+import type { GrantLifecycle } from "./grantLifecycle.js";
 import type { Membership } from "./membership.js";
 import type { GrantStatus, JitGrant, JitPolicy } from "./types.js";
 
@@ -11,6 +12,8 @@ export interface GrantServiceDeps {
   grantRepo: GrantRepo;
   policyRepo: PolicyRepo;
   audit: AuditRepo;
+  /** The single authority for status changes (legality + atomic CAS + derived audit). */
+  lifecycle: GrantLifecycle;
   membership: Membership;
   isPropagationEnabled: () => Promise<boolean>;
   allowSelfApproval?: boolean;
@@ -21,7 +24,7 @@ const minutesFrom = (d: Date, minutes: number): string =>
   new Date(d.getTime() + minutes * 60_000).toISOString();
 
 export function createGrantService(deps: GrantServiceDeps) {
-  const { grantRepo, policyRepo, audit, membership } = deps;
+  const { grantRepo, policyRepo, audit, lifecycle, membership } = deps;
   const now = deps.now ?? (() => new Date());
   const iso = () => now().toISOString();
   /** Attach the (current) policy name so list views can show it without a second lookup. */
@@ -46,48 +49,40 @@ export function createGrantService(deps: GrantServiceDeps) {
     const grant = mustGrant(grantId);
     try {
       await membership.add(grant.requesterUserId, policy.backingGroupId);
-      const startedAt = now();
-      const active = grantRepo.update(grantId, {
-        status: "active",
-        activatedAt: startedAt.toISOString(),
-        expiresAt: minutesFrom(startedAt, grant.requestedDurationMinutes),
-        lastError: undefined,
-      });
-      audit.append({
-        action: "grant.activate",
-        actorUserId: actor?.userId,
-        actorEmail: actor?.email,
-        policyId: policy.id,
-        grantId,
-        detail: { expiresAt: active.expiresAt },
-      });
-      // If this grant renews an existing one, retire the prior grant — but never
-      // remove the backing group (this grant now holds it). Only supersede if the
-      // target is still active; if it already expired/ended, leave its status intact.
-      if (active.supersedesGrantId) {
-        const prior = grantRepo.getById(active.supersedesGrantId);
-        if (prior && prior.status === "active") {
-          grantRepo.update(prior.id, {
-            status: "superseded",
-            revokedAt: iso(),
-            revokeReason: "superseded_by_renewal",
-          });
-          audit.append({
-            action: "grant.supersede",
-            actorUserId: actor?.userId,
-            actorEmail: actor?.email,
-            policyId: policy.id,
-            grantId: prior.id,
-            detail: { supersededBy: grantId },
-          });
-        }
-      }
-      return active;
     } catch (e) {
-      grantRepo.update(grantId, { status: "failed", lastError: (e as Error).message });
-      audit.append({ action: "grant.fail", policyId: policy.id, grantId, detail: { error: (e as Error).message } });
+      // Only the NetBird membership write can fail here; mark the grant failed
+      // (approved→failed, or failed→failed on a retry) and let the scheduler retry.
+      lifecycle.transition(grantId, "failed", {
+        stamps: { lastError: (e as Error).message },
+        detail: { error: (e as Error).message },
+      });
       throw e;
     }
+    const startedAt = now();
+    const expiresAt = minutesFrom(startedAt, grant.requestedDurationMinutes);
+    const active = lifecycle.transition(grantId, "active", {
+      stamps: { activatedAt: startedAt.toISOString(), expiresAt, lastError: undefined },
+      actor,
+      detail: { expiresAt },
+    });
+    if (!active) {
+      throw new AppError(ErrorCodes.CONFLICT, "Grant changed during activation", 409);
+    }
+    // If this grant renews an existing one, retire the prior grant — but never
+    // remove the backing group (this grant now holds it). Opportunistic: only if
+    // the prior is still active (an admin extend may already have claimed it);
+    // a lost CAS is a benign skip.
+    if (active.supersedesGrantId) {
+      const prior = grantRepo.getById(active.supersedesGrantId);
+      if (prior && prior.status === "active") {
+        lifecycle.transition(prior.id, "superseded", {
+          stamps: { revokedAt: iso(), revokeReason: "superseded_by_renewal" },
+          actor,
+          detail: { supersededBy: grantId },
+        });
+      }
+    }
+    return active;
   }
 
   /** Remove the backing group; transition to a terminal status. Shared by expire/revoke/end. */
@@ -101,20 +96,14 @@ export function createGrantService(deps: GrantServiceDeps) {
     if (policy?.backingGroupId) {
       await membership.remove(grant.requesterUserId, policy.backingGroupId, grant.id);
     }
-    const updated = grantRepo.update(grant.id, {
-      status: terminal,
-      revokedAt: iso(),
-      revokeReason: reason,
-    });
-    audit.append({
-      action: terminal === "expired" ? "grant.expire" : "grant.revoke",
-      actorUserId: actor?.userId,
-      actorEmail: actor?.email,
-      policyId: grant.policyId,
-      grantId: grant.id,
+    const updated = lifecycle.transition(grant.id, terminal, {
+      stamps: { revokedAt: iso(), revokeReason: reason },
+      actor,
       detail: { reason },
     });
-    return updated;
+    // Lost the CAS (a concurrent expire/revoke already finalised it). Membership
+    // removal is idempotent, so just report the current state.
+    return updated ?? mustGrant(grant.id);
   }
 
   return {
@@ -155,6 +144,8 @@ export function createGrantService(deps: GrantServiceDeps) {
         pendingExpiresAt: minutesFrom(now(), policy.pendingTtlMinutes),
         supersedesGrantId: active?.id,
       });
+      // Creation is not a status transition (the grant is born `pending`), so it
+      // audits here rather than through the lifecycle.
       audit.append({
         action: "request.create",
         actorUserId: caller.userId,
@@ -193,22 +184,13 @@ export function createGrantService(deps: GrantServiceDeps) {
       }
       // Atomic pending→approved so two concurrent approvals can't both reach
       // activate() (the status check above straddles the awaited propagation read).
-      const approved = grantRepo.transitionFrom(grantId, "pending", {
-        status: "approved",
-        approverUserId: caller.userId,
-        approverEmail: caller.email,
-        decidedAt: iso(),
+      const approved = lifecycle.transition(grantId, "approved", {
+        stamps: { approverUserId: caller.userId, approverEmail: caller.email, decidedAt: iso() },
+        actor: caller,
       });
       if (!approved) {
         throw new AppError(ErrorCodes.CONFLICT, "Request is no longer pending", 409);
       }
-      audit.append({
-        action: "grant.approve",
-        actorUserId: caller.userId,
-        actorEmail: caller.email,
-        policyId: policy.id,
-        grantId,
-      });
       return activate(grantId, policy, caller);
     },
 
@@ -218,24 +200,14 @@ export function createGrantService(deps: GrantServiceDeps) {
         throw new AppError(ErrorCodes.CONFLICT, `Request is ${grant.status}, not pending`, 409);
       }
       assertCanApprove(caller, policyFor(grant).approverCriteria);
-      const updated = grantRepo.transitionFrom(grantId, "pending", {
-        status: "denied",
-        approverUserId: caller.userId,
-        approverEmail: caller.email,
-        decidedAt: iso(),
-        denialReason: reason,
+      const updated = lifecycle.transition(grantId, "denied", {
+        stamps: { approverUserId: caller.userId, approverEmail: caller.email, decidedAt: iso(), denialReason: reason },
+        actor: caller,
+        detail: { reason },
       });
       if (!updated) {
         throw new AppError(ErrorCodes.CONFLICT, "Request is no longer pending", 409);
       }
-      audit.append({
-        action: "grant.deny",
-        actorUserId: caller.userId,
-        actorEmail: caller.email,
-        policyId: grant.policyId,
-        grantId,
-        detail: { reason },
-      });
       return updated;
     },
 
@@ -245,21 +217,13 @@ export function createGrantService(deps: GrantServiceDeps) {
       if (grant.status !== "pending") {
         throw new AppError(ErrorCodes.CONFLICT, "Only pending requests can be cancelled", 409);
       }
-      const updated = grantRepo.transitionFrom(grantId, "pending", {
-        status: "cancelled",
-        decidedAt: iso(),
-        denialReason: "cancelled_by_requester",
+      const updated = lifecycle.transition(grantId, "cancelled", {
+        stamps: { decidedAt: iso(), denialReason: "cancelled_by_requester" },
+        actor: caller,
       });
       if (!updated) {
         throw new AppError(ErrorCodes.CONFLICT, "Only pending requests can be cancelled", 409);
       }
-      audit.append({
-        action: "grant.cancel",
-        actorUserId: caller.userId,
-        actorEmail: caller.email,
-        policyId: grant.policyId,
-        grantId,
-      });
       return updated;
     },
 
@@ -282,9 +246,11 @@ export function createGrantService(deps: GrantServiceDeps) {
     },
 
     /**
-     * Admin/approver renews an active grant directly (no pending step): create a
-     * pre-approved superseding grant and activate it. Renews the clock to
-     * now + duration; membership is unchanged (the target already holds the group).
+     * Admin/approver renews an active grant directly (no pending step). Atomically
+     * claims the target (active→superseded) so two concurrent extends can't both
+     * create an active renewal; only the winner creates + activates the renewal.
+     * Renews the clock to now + duration; membership is unchanged (the target
+     * already holds the group).
      */
     async extendByAdmin(activeGrantId: string, caller: Caller, durationMinutes: number): Promise<JitGrant> {
       const target = mustGrant(activeGrantId);
@@ -300,6 +266,16 @@ export function createGrantService(deps: GrantServiceDeps) {
           400,
         );
       }
+      // Claim the target first. Two concurrent extends race on this CAS; the
+      // loser gets null → 409, so only one renewal is ever created/activated.
+      const claimed = lifecycle.transition(target.id, "superseded", {
+        stamps: { revokedAt: iso(), revokeReason: "superseded_by_renewal" },
+        actor: caller,
+        detail: { adminExtend: true },
+      });
+      if (!claimed) {
+        throw new AppError(ErrorCodes.CONFLICT, "Grant is already being renewed or is no longer active", 409);
+      }
       const renewal = grantRepo.create({
         policyId: target.policyId,
         requesterUserId: target.requesterUserId,
@@ -307,21 +283,12 @@ export function createGrantService(deps: GrantServiceDeps) {
         requestedDurationMinutes: durationMinutes,
         supersedesGrantId: target.id,
       });
-      grantRepo.update(renewal.id, {
-        status: "approved",
-        approverUserId: caller.userId,
-        approverEmail: caller.email,
-        decidedAt: iso(),
-      });
-      audit.append({
-        action: "grant.approve",
-        actorUserId: caller.userId,
-        actorEmail: caller.email,
-        policyId: policy.id,
-        grantId: renewal.id,
+      lifecycle.transition(renewal.id, "approved", {
+        stamps: { approverUserId: caller.userId, approverEmail: caller.email, decidedAt: iso() },
+        actor: caller,
         detail: { adminExtend: true },
       });
-      // activate() re-reads the renewal by id, so the discarded update return is fine.
+      // activate() re-reads the renewal; its supersede step no-ops (target already superseded).
       return activate(renewal.id, policy, caller);
     },
 
@@ -338,12 +305,10 @@ export function createGrantService(deps: GrantServiceDeps) {
         if (grant.status === "active" || grant.status === "failed") {
           await deactivate(grant, "revoked", reason);
         } else if (grant.status === "pending" || grant.status === "approved") {
-          grantRepo.update(grant.id, {
-            status: "cancelled",
-            decidedAt: iso(),
-            denialReason: reason,
+          lifecycle.transition(grant.id, "cancelled", {
+            stamps: { decidedAt: iso(), denialReason: reason },
+            detail: { reason },
           });
-          audit.append({ action: "grant.cancel", policyId, grantId: grant.id, detail: { reason } });
         }
       }
     },
@@ -352,13 +317,11 @@ export function createGrantService(deps: GrantServiceDeps) {
     expire: (grant: JitGrant): Promise<JitGrant> => deactivate(grant, "expired", "expired"),
 
     autoDenyPending(grant: JitGrant): JitGrant {
-      const updated = grantRepo.update(grant.id, {
-        status: "denied",
-        decidedAt: iso(),
-        denialReason: "request_timed_out",
+      const updated = lifecycle.transition(grant.id, "denied", {
+        stamps: { decidedAt: iso(), denialReason: "request_timed_out" },
+        detail: { reason: "timed_out" },
       });
-      audit.append({ action: "grant.deny", policyId: grant.policyId, grantId: grant.id, detail: { reason: "timed_out" } });
-      return updated;
+      return updated ?? grant;
     },
 
     async retryFailed(grant: JitGrant): Promise<void> {

@@ -92,7 +92,7 @@ describe("grantRepo", () => {
     const p = policies.create(policyInput());
 
     const g = grants.create({ policyId: p.id, requesterUserId: "user-1", requestedDurationMinutes: 60 });
-    grants.update(g.id, {
+    grants.transitionFrom(g.id, "pending", {
       status: "active",
       activatedAt: "2026-06-26T10:00:00.000Z",
       expiresAt: "2026-06-26T11:00:00.000Z",
@@ -125,7 +125,7 @@ describe("grantRepo", () => {
     const policies = createPolicyRepo(db);
     const p = policies.create(policyInput());
     const g = grants.create({ policyId: p.id, requesterUserId: "u", requestedDurationMinutes: 10 });
-    grants.update(g.id, { status: "revoked", revokedAt: "2026-01-02T00:00:00.000Z" });
+    grants.transitionFrom(g.id, "pending", { status: "revoked", revokedAt: "2026-01-02T00:00:00.000Z" });
     expect(grants.deleteTerminalOlderThan("2026-01-01T00:00:00.000Z")).toBe(0);
     expect(grants.deleteTerminalOlderThan("2026-06-01T00:00:00.000Z")).toBe(1);
     expect(grants.listByStatus("revoked")).toHaveLength(0);

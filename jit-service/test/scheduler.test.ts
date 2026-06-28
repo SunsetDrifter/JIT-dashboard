@@ -4,6 +4,7 @@ import { createPolicyRepo } from "../src/db/repositories/policyRepo.js";
 import { createGrantRepo } from "../src/db/repositories/grantRepo.js";
 import { createAuditRepo } from "../src/db/repositories/auditRepo.js";
 import { createGrantService } from "../src/domain/grantService.js";
+import { createGrantLifecycle } from "../src/domain/grantLifecycle.js";
 import { createScheduler } from "../src/scheduler/worker.js";
 import { reconcileOnce } from "../src/scheduler/reconcile.js";
 import type { Membership } from "../src/domain/membership.js";
@@ -30,10 +31,12 @@ describe("scheduler worker", () => {
     const policyRepo = createPolicyRepo(db);
     const grantRepo = createGrantRepo(db);
     const membership = fakeMembership();
+    const audit = createAuditRepo(db);
     const svc = createGrantService({
       grantRepo,
       policyRepo,
-      audit: createAuditRepo(db),
+      audit,
+      lifecycle: createGrantLifecycle({ grantRepo, audit }),
       membership: membership.m,
       isPropagationEnabled: async () => true,
       now: () => NOW,
@@ -57,7 +60,7 @@ describe("scheduler worker", () => {
       pendingExpiresAt: "2026-06-26T11:00:00.000Z",
     });
     const elapsedActive = grantRepo.create({ policyId: policy.id, requesterUserId: "u-active", requestedDurationMinutes: 30 });
-    grantRepo.update(elapsedActive.id, {
+    grantRepo.transitionFrom(elapsedActive.id, "pending", {
       status: "active",
       activatedAt: "2026-06-26T11:00:00.000Z",
       expiresAt: "2026-06-26T11:30:00.000Z",
@@ -99,7 +102,7 @@ describe("reconcileOnce", () => {
       createdByUserId: "adm",
     });
     const g = grantRepo.create({ policyId: policy.id, requesterUserId: "u1", requestedDurationMinutes: 30 });
-    grantRepo.update(g.id, { status: "active", activatedAt: NOW.toISOString(), expiresAt: "2026-06-26T13:00:00.000Z" });
+    grantRepo.transitionFrom(g.id, "pending", { status: "active", activatedAt: NOW.toISOString(), expiresAt: "2026-06-26T13:00:00.000Z" });
     return { policyRepo, grantRepo };
   }
 

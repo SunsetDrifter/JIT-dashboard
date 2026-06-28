@@ -4,6 +4,7 @@ import { createPolicyRepo } from "../src/db/repositories/policyRepo.js";
 import { createGrantRepo } from "../src/db/repositories/grantRepo.js";
 import { createAuditRepo } from "../src/db/repositories/auditRepo.js";
 import { createGrantService } from "../src/domain/grantService.js";
+import { createGrantLifecycle } from "../src/domain/grantLifecycle.js";
 import { AppError, ErrorCodes } from "../src/lib/errors.js";
 import type { Membership } from "../src/domain/membership.js";
 import type { Caller } from "../src/auth/identity.js";
@@ -42,6 +43,7 @@ function setup(opts: { propagation?: boolean; failAdd?: boolean } = {}) {
     grantRepo,
     policyRepo,
     audit,
+    lifecycle: createGrantLifecycle({ grantRepo, audit }),
     membership: membership.m,
     isPropagationEnabled: async () => opts.propagation ?? true,
     now: () => FIXED,
@@ -179,6 +181,27 @@ describe("grantService", () => {
     await expect(svc.extendByAdmin(renewed.id, admin, 999)).rejects.toMatchObject({ code: ErrorCodes.VALIDATION });
     await expect(svc.extendByAdmin(renewed.id, requester, 30)).rejects.toMatchObject({ code: ErrorCodes.FORBIDDEN });
     await expect(svc.extendByAdmin(g1.id, admin, 30)).rejects.toMatchObject({ code: ErrorCodes.CONFLICT });
+  });
+
+  it("two concurrent admin extends cannot both create an active grant (CAS-claim)", async () => {
+    const { svc, grantRepo, policy } = setup();
+    const g1 = svc.requestAccess(policy.id, requester, { durationMinutes: 60 });
+    await svc.approve(g1.id, admin); // g1 active
+
+    // Both extends target the same active grant; only the one that wins the
+    // active→superseded claim may create + activate a renewal.
+    const results = await Promise.allSettled([
+      svc.extendByAdmin(g1.id, admin, 90),
+      svc.extendByAdmin(g1.id, admin, 90),
+    ]);
+    const fulfilled = results.filter((r) => r.status === "fulfilled");
+    const rejected = results.filter((r) => r.status === "rejected") as PromiseRejectedResult[];
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]!.reason).toMatchObject({ code: ErrorCodes.CONFLICT });
+
+    // The invariant the old code violated: at most one active grant per user+policy.
+    expect(grantRepo.listByRequester(requester.userId, "active")).toHaveLength(1);
   });
 
   it("voids active and pending grants when a policy is deleted", async () => {

@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import type { DB } from "../index.js";
-import { AppError, ErrorCodes } from "../../lib/errors.js";
 import type { GrantStatus, JitGrant } from "../../domain/types.js";
 
 interface GrantRow {
@@ -79,7 +78,14 @@ export type CreateGrantInput = {
   supersedesGrantId?: string;
 };
 
-export type UpdateGrantInput = Partial<Omit<JitGrant, "id" | "policyId" | "requestedAt">>;
+/**
+ * Fields a status transition may set — including `status` itself. The ONLY
+ * method that accepts this is `transitionFrom`, an atomic compare-and-set. There
+ * is deliberately no unconditional `update()`: a Grant's status can change only
+ * through `transitionFrom`, which the grantLifecycle module wraps with legality
+ * + audit. Removing `update()` makes that a compile-time guarantee.
+ */
+export type TransitionPatch = Partial<Omit<JitGrant, "id" | "policyId" | "requestedAt">>;
 
 const COLS =
   "id, policy_id, requester_user_id, requester_email, requested_duration_minutes, justification, status, approver_user_id, approver_email, denial_reason, revoke_reason, requested_at, pending_expires_at, decided_at, activated_at, expires_at, revoked_at, last_error, supersedes_grant_id";
@@ -90,7 +96,6 @@ const SET =
 
 export function createGrantRepo(db: DB, now: () => string = () => new Date().toISOString()) {
   const insert = db.prepare(`INSERT INTO jit_grants (${COLS}) VALUES (${VALS})`);
-  const updateStmt = db.prepare(`UPDATE jit_grants SET ${SET} WHERE id=@id`);
   const conditionalUpdateStmt = db.prepare(
     `UPDATE jit_grants SET ${SET} WHERE id=@id AND status=@expected_status`,
   );
@@ -153,16 +158,6 @@ export function createGrantRepo(db: DB, now: () => string = () => new Date().toI
 
     getById,
 
-    update(id: string, patch: UpdateGrantInput): JitGrant {
-      const existing = getById(id);
-      if (!existing) {
-        throw new AppError(ErrorCodes.NOT_FOUND, `Grant ${id} not found`, 404);
-      }
-      const merged: JitGrant = { ...existing, ...patch, id };
-      updateStmt.run(grantToRow(merged) as unknown as Record<string, unknown>);
-      return merged;
-    },
-
     /**
      * Apply `patch` only if the row is still in `expected` status, atomically
      * (the WHERE clause is the guard, not the prior read). Returns the updated
@@ -170,7 +165,7 @@ export function createGrantRepo(db: DB, now: () => string = () => new Date().toI
      * for status transitions that straddle an await so two concurrent callers
      * can't both proceed (e.g. a double-approve).
      */
-    transitionFrom(id: string, expected: GrantStatus, patch: UpdateGrantInput): JitGrant | null {
+    transitionFrom(id: string, expected: GrantStatus, patch: TransitionPatch): JitGrant | null {
       const existing = getById(id);
       if (!existing || existing.status !== expected) return null;
       const merged: JitGrant = { ...existing, ...patch, id };

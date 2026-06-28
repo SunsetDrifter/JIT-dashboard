@@ -6,6 +6,7 @@ import { createGrantRepo } from "../src/db/repositories/grantRepo.js";
 import { createAuditRepo } from "../src/db/repositories/auditRepo.js";
 import { createMembership } from "../src/domain/membership.js";
 import { createGrantService } from "../src/domain/grantService.js";
+import { createGrantLifecycle } from "../src/domain/grantLifecycle.js";
 import { KeyedMutex } from "../src/lib/mutex.js";
 import type { Config } from "../src/config.js";
 import type { JwtVerifier } from "../src/auth/jwt.js";
@@ -52,6 +53,7 @@ function build() {
     grantRepo,
     policyRepo,
     audit: auditRepo,
+    lifecycle: createGrantLifecycle({ grantRepo, audit: auditRepo }),
     membership,
     isPropagationEnabled: async () => true,
   });
