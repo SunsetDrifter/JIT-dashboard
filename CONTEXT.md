@@ -27,7 +27,7 @@ A Request that supersedes the requester's active Grant for the same JIT policy. 
 Terminal Grant status for a Grant that has been replaced by an approved renewal.
 
 **Grant lifecycle**:
-The legal status changes a Grant (one `jit_grants` row) may undergo — `pending → approved → active → expired/revoked/superseded`, plus `denied`/`cancelled`/`failed`. Every status change is one **transition**: legal only if its `from → to` edge is allowed, atomic (compare-and-set, so two concurrent callers can't both win), and audited with an action derived from the edge. It lives in a single module (`jit-service/src/domain/grantLifecycle.ts`) that is the only path which mutates a Grant's status; `grantService` supplies the preconditions and membership side-effects around it.
+The legal status changes a Grant (one `jit_grants` row) may undergo — `pending → approved → active → expired/revoked/superseded`, plus `denied`/`cancelled`/`failed`. Every status change is one **transition**: legal only if its `from → to` edge is allowed, atomic (compare-and-set, so two concurrent callers can't both win), and audited with an action derived from the edge. The grant-lifecycle module in the management server fork is the only path that mutates a Grant's status; the grant service supplies preconditions and membership side-effects around it.
 _Avoid_: state machine (in UI prose), status flip.
 
 **Backing group**:
