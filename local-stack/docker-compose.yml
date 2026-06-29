@@ -1,0 +1,49 @@
+# Local HTTP-only NetBird JIT fork (combined server + embedded IdP + JIT) for
+# testing the JIT-enabled management server. Keyed to the host LAN IP
+# 192.168.50.187 so the OIDC issuer is reachable by both the browser and the
+# JIT container. Not for production.
+services:
+  netbird-server:
+    image: jit-netbird-server:local
+    container_name: nb-local-server
+    restart: unless-stopped
+    networks: [netbird]
+    volumes:
+      - nb_data:/var/lib/netbird
+      - ./config.yaml:/etc/netbird/config.yaml
+    command: ["--config", "/etc/netbird/config.yaml"]
+    logging:
+      driver: "json-file"
+      options: { max-size: "100m", max-file: "2" }
+
+  dashboard:
+    # Fork build (JIT pages + nav). Built under Node 20 (CI parity) — Node 24
+    # produced a broken client-side router. Rebuild:
+    #   docker run --rm -v "$PWD":/app -v /app/node_modules -w /app \
+    #     -e APP_ENV=production node:20-bookworm bash -lc "npm ci && npm run build"
+    #   docker build -f docker/Dockerfile -t jit-dashboard:local .
+    image: jit-dashboard:local
+    container_name: netbird-dashboard
+    restart: unless-stopped
+    networks: [netbird]
+    env_file: [./dashboard.env]
+
+  nginx:
+    image: nginx:alpine
+    container_name: nb-local-nginx
+    restart: unless-stopped
+    depends_on: [dashboard, netbird-server]
+    networks: [netbird]
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
+volumes:
+  nb_data:
+
+networks:
+  netbird:
+    ipam:
+      config:
+        - subnet: 172.31.0.0/16
