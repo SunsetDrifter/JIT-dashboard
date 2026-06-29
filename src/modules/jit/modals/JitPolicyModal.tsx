@@ -11,7 +11,7 @@ import { PeerGroupSelector } from "@components/PeerGroupSelector";
 import { SelectDropdown } from "@components/select/SelectDropdown";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@components/Tabs";
 import { Textarea } from "@components/Textarea";
-import { AlertTriangleIcon, ServerIcon, ShieldCheckIcon, UsersIcon, XIcon } from "lucide-react";
+import { AlertTriangleIcon, FileTextIcon, ServerIcon, ShieldCheckIcon, UsersIcon, XIcon } from "lucide-react";
 import * as React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useGroups } from "@/contexts/GroupsProvider";
@@ -32,17 +32,19 @@ type Props = {
 // creation (the backend rejects converting one to the other).
 type SourceMode = "policy" | "resources";
 
-// The create/edit form is split into two steps so it isn't one long scroll:
-// "policy" (what access, for how long) then "restrictions" (who may request /
-// approve).
-type Step = "policy" | "restrictions";
+// The create/edit form is a three-step flow so it isn't one long scroll and the
+// source-policy picker + grant summary get a step of their own with room:
+//   details      → name + description
+//   access       → source (policy or resources) + max duration
+//   restrictions → who may request / approve
+type Step = "details" | "access" | "restrictions";
 
 export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
   const { resources, accessPolicies, createPolicy, updatePolicy } = useJit();
   const { groups } = useGroups();
   const isEdit = !!policy;
 
-  const [step, setStep] = useState<Step>("policy");
+  const [step, setStep] = useState<Step>("details");
   const [mode, setMode] = useState<SourceMode>("policy");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -62,7 +64,7 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
   // (Re)initialise when the modal opens.
   useEffect(() => {
     if (!open) return;
-    setStep("policy"); // always start on the first step
+    setStep("details"); // always start on the first step
     // Mode is derived from the policy on edit (and is then locked); a brand-new
     // policy defaults to mirroring an existing policy — the recommended path.
     setMode(policy ? (policy.sourcePolicyId ? "policy" : "resources") : "policy");
@@ -160,23 +162,20 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
       .map((r, i) => ({ key: r.id ?? `rule-${i}`, text: ruleSummary(r) }));
   }, [selectedPolicy, groups, resources]);
 
-  // Step 1 ("policy") completeness — gates the Continue button and the
-  // Restrictions tab. Restrictions are optional, so step 2 has no required
-  // fields beyond the group pickers (covered by `invalid`).
-  const step1Invalid = useMemo(() => {
-    if (name.trim().length === 0) return true;
+  // Per-step completeness, used to gate the tabs + Continue/Submit buttons.
+  const detailsInvalid = useMemo(() => name.trim().length === 0, [name]);
+  const accessInvalid = useMemo(() => {
     if (mode === "policy" ? !sourcePolicyId : resourceIds.length === 0) return true;
     if (!max || max < 1) return true;
     return false;
-  }, [name, mode, sourcePolicyId, resourceIds, max]);
-
+  }, [mode, sourcePolicyId, resourceIds, max]);
   // Full validity — gates the final submit (adds the restriction-group checks).
   const invalid = useMemo(() => {
-    if (step1Invalid) return true;
+    if (detailsInvalid || accessInvalid) return true;
     if (restrictRequesters && requesterGroupIds.length === 0) return true;
     if (restrictApprovers && approverGroupIds.length === 0) return true;
     return false;
-  }, [step1Invalid, restrictRequesters, requesterGroupIds, restrictApprovers, approverGroupIds]);
+  }, [detailsInvalid, accessInvalid, restrictRequesters, requesterGroupIds, restrictApprovers, approverGroupIds]);
 
   const toggleResource = (id: string) =>
     setResourceIds((prev) => (prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id]));
@@ -230,31 +229,39 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
           color="netbird"
         />
 
-        <Tabs value={step} defaultValue="policy" onValueChange={(v) => setStep(v as Step)}>
+        <Tabs value={step} defaultValue="details" onValueChange={(v) => setStep(v as Step)}>
           <TabsList justify="start" className="px-8">
-            <TabsTrigger value="policy" data-testid="jit-tab-policy">
-              <ShieldCheckIcon size={14} /> Policy
+            <TabsTrigger value="details" data-testid="jit-tab-details">
+              <FileTextIcon size={14} /> Details
             </TabsTrigger>
-            {/* Restrictions stays out of reach until the policy step is complete,
-                so you can't reach a half-defined policy's restrictions. */}
-            <TabsTrigger value="restrictions" data-testid="jit-tab-restrictions" disabled={step1Invalid}>
+            {/* Each later step stays out of reach until the earlier ones are
+                complete, so you can't land on a step that depends on missing input. */}
+            <TabsTrigger value="access" data-testid="jit-tab-access" disabled={detailsInvalid}>
+              <ServerIcon size={14} /> Access
+            </TabsTrigger>
+            <TabsTrigger value="restrictions" data-testid="jit-tab-restrictions" disabled={detailsInvalid || accessInvalid}>
               <UsersIcon size={14} /> Restrictions
             </TabsTrigger>
           </TabsList>
 
-          {/* Step 1: what the policy grants + for how long. */}
-          <TabsContent value="policy" className="px-8 pb-2">
+          {/* Step 1: identity. */}
+          <TabsContent value="details" className="px-8 pb-2">
             <div className="flex flex-col gap-6 max-h-[55vh] overflow-y-auto pr-1">
               <div>
                 <Label>Name</Label>
                 <Input data-testid="jit-policy-name" placeholder="e.g. Prod database (break-glass)" value={name} onChange={(e) => setName(e.target.value)} />
               </div>
-
               <div>
                 <Label>Description <span className="text-nb-gray-400">(optional)</span></Label>
                 <Textarea data-testid="jit-policy-description" placeholder="What this grants and when to use it" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
               </div>
+            </div>
+          </TabsContent>
 
+          {/* Step 2: what access, for how long. The policy picker + grant summary
+              have this whole step to themselves, so they rarely need to scroll. */}
+          <TabsContent value="access" className="px-8 pb-2">
+            <div className="flex flex-col gap-6 max-h-[55vh] overflow-y-auto pr-1">
               {/* Access source. The flavor is fixed once created, so on edit we show
                   a static label instead of the toggle. */}
               <div>
@@ -391,7 +398,7 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
             </div>
           </TabsContent>
 
-          {/* Step 2: who may request / approve. Both default off (no restriction). */}
+          {/* Step 3: who may request / approve. Both default off (no restriction). */}
           <TabsContent value="restrictions" className="px-8 pb-2">
             <div className="flex flex-col gap-6 max-h-[55vh] overflow-y-auto pr-1">
               <FancyToggleSwitch
@@ -438,7 +445,7 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
 
         <ModalFooter className="items-center">
           <div className="flex gap-3 w-full justify-end">
-            {step === "policy" ? (
+            {step === "details" && (
               <>
                 <ModalClose asChild>
                   <Button variant="secondary" data-testid="jit-policy-cancel">Cancel</Button>
@@ -446,15 +453,31 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
                 <Button
                   variant="primary"
                   data-testid="jit-policy-continue"
-                  disabled={step1Invalid}
+                  disabled={detailsInvalid}
+                  onClick={() => setStep("access")}
+                >
+                  Continue
+                </Button>
+              </>
+            )}
+            {step === "access" && (
+              <>
+                <Button variant="secondary" data-testid="jit-policy-back" onClick={() => setStep("details")}>
+                  Back
+                </Button>
+                <Button
+                  variant="primary"
+                  data-testid="jit-policy-continue"
+                  disabled={detailsInvalid || accessInvalid}
                   onClick={() => setStep("restrictions")}
                 >
                   Continue
                 </Button>
               </>
-            ) : (
+            )}
+            {step === "restrictions" && (
               <>
-                <Button variant="secondary" data-testid="jit-policy-back" onClick={() => setStep("policy")}>
+                <Button variant="secondary" data-testid="jit-policy-back" onClick={() => setStep("access")}>
                   Back
                 </Button>
                 <Button variant="primary" data-testid="jit-policy-submit" disabled={invalid || submitting} onClick={submit}>
