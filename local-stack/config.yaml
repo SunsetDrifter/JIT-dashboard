@@ -1,6 +1,10 @@
 server:
   listenAddress: ":80"
-  exposedAddress: "http://localhost:80"
+  # Advertised to PEERS for signal/relay/STUN (config.go derives Signal URI +
+  # relay address from this). Must be reachable from peer containers, so use the
+  # compose service name, not localhost. The browser/dashboard reach the API via
+  # nginx on the host (:80) and the OIDC issuer below — both independent of this.
+  exposedAddress: "http://netbird-server:80"
   stunPorts:
     - 3478
   metricsPort: 9090
@@ -13,6 +17,8 @@ server:
 
   auth:
     issuer: "http://localhost/oauth2"
+    # Must be true: the embedded Dex generates/publishes its signing key via this
+    # rotation mechanism (false → no key at /oauth2/keys → Dex can't sign).
     signKeyRefreshEnabled: true
     dashboardRedirectURIs:
       - "http://localhost/nb-auth"
