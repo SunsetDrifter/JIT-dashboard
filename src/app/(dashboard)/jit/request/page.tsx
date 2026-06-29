@@ -23,13 +23,20 @@ export default function JitRequestPage() {
   const [selected, setSelected] = useState<EligiblePolicy | null>(null);
   const [extendPolicy, setExtendPolicy] = useState<EligiblePolicy | null>(null);
 
+  // A user can't fetch /jit/policies (admin-only), so resolve each grant's
+  // policy name from the eligible-policies list they CAN see.
+  const policyNameById = React.useMemo(
+    () => new Map((eligiblePolicies ?? []).map((p) => [p.id, p.name] as const)),
+    [eligiblePolicies],
+  );
+
   const columns: ColumnDef<JitGrant>[] = [
     {
       id: "policy",
       header: "Policy",
       cell: ({ row }) => (
         <span className="flex items-center gap-2">
-          {row.original.policyName ?? "—"}
+          {row.original.policyName ?? policyNameById.get(row.original.policyId) ?? "—"}
           {row.original.supersedesGrantId && (
             <span>
               <Badge variant="blue" className="capitalize">extension</Badge>
@@ -135,18 +142,17 @@ export default function JitRequestPage() {
         </section>
 
         <section>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-base font-medium">My requests</h2>
-            <DataTableRefreshButton onClick={() => void refreshMine()} />
-          </div>
+          <h2 className="text-base font-medium mb-3">My requests</h2>
           {/* DataTable carries its own p-default toolbar gutter; cancel the page
               wrapper's p-default here so the search + rows align left with the
-              headings, matching the other list pages. */}
+              headings, matching the other list pages. The refresh button sits in
+              the toolbar's rightSide slot, to the right of the search bar. */}
           <DataTable
             columns={columns}
             data={myRequests ?? []}
             text="requests"
             className="-mx-4 sm:-mx-6 md:-mx-8"
+            rightSide={() => <DataTableRefreshButton onClick={() => void refreshMine()} />}
           />
         </section>
       </div>
