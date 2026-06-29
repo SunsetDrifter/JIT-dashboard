@@ -114,7 +114,10 @@ export default function JitRequestPage() {
                     </div>
                     <div className="text-xs text-nb-gray-400 flex items-center gap-3">
                       <span className="flex items-center gap-1">
-                        <ServerIcon size={13} /> {p.targetResourceIds.length} resource(s)
+                        <ServerIcon size={13} />{" "}
+                        {p.sourcePolicyId
+                          ? `via ${p.sourcePolicyName ?? "policy"}`
+                          : `${p.targetResourceIds.length} resource(s)`}
                       </span>
                       <span className="flex items-center gap-1">
                         <Clock3Icon size={13} /> up to {formatDuration(p.maxDurationMinutes)}

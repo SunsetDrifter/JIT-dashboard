@@ -7,6 +7,7 @@ import { useLoggedInUser } from "@/contexts/UsersProvider";
 import { useAccount } from "@/modules/account/useAccount";
 import useFetchApi from "@utils/api";
 import type { NetworkResource } from "@/interfaces/Network";
+import type { Policy } from "@/interfaces/Policy";
 import { useJitCall, useJitFetch } from "./hooks/useJitApi";
 import type {
   CreateJitPolicyBody,
@@ -26,6 +27,8 @@ type JitContextValue = {
   serviceUnavailable: boolean;
   policies?: JitPolicy[];
   resources?: JitNetworkResource[];
+  // Access Control policies an admin can base a mirror-type JIT policy on.
+  accessPolicies?: Policy[];
   eligiblePolicies?: EligiblePolicy[];
   myRequests?: JitGrant[];
   pendingRequests?: JitGrant[];
@@ -58,6 +61,15 @@ export function JitProvider({ children }: { children: React.ReactNode }) {
   // Native network resources replaces the dropped /admin/network-resources endpoint.
   const { data: rawResources } = useFetchApi<NetworkResource[]>(
     "/networks/resources",
+    true,
+    true,
+    isOwnerOrAdmin,
+  );
+
+  // Access Control policies — candidate sources for mirror-type JIT policies.
+  // JIT-owned policies are already filtered out of /policies server-side.
+  const { data: rawAccessPolicies } = useFetchApi<Policy[]>(
+    "/policies",
     true,
     true,
     isOwnerOrAdmin,
@@ -217,8 +229,10 @@ export function JitProvider({ children }: { children: React.ReactNode }) {
       "Extending…",
     );
 
-  // Memoised resources so the modal's useMemo deps stay stable.
+  // Memoised resources + access policies so the modal's useMemo deps stay stable
+  // (useFetchApi can hand back a new array reference before data settles).
   const resources = useMemo(() => rawResources, [rawResources]);
+  const accessPolicies = useMemo(() => rawAccessPolicies, [rawAccessPolicies]);
 
   const value: JitContextValue = {
     isAdmin: isOwnerOrAdmin,
@@ -226,6 +240,7 @@ export function JitProvider({ children }: { children: React.ReactNode }) {
     serviceUnavailable,
     policies: policies.data,
     resources,
+    accessPolicies,
     eligiblePolicies: eligible.data,
     myRequests: mine.data,
     pendingRequests: pending.data,

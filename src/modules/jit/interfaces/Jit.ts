@@ -37,6 +37,14 @@ export interface JitPolicy {
   // (absent, not null), so they're optional.
   backingGroupId?: string;
   netbirdPolicyId?: string;
+  // Mirror-type policy: set when this policy copies an existing Access Control
+  // policy instead of a resource list. sourcePolicyName is the source's name
+  // captured at the last sync; sourceDrifted/sourceDeleted are computed
+  // server-side for admin reads (the source changed / no longer exists).
+  sourcePolicyId?: string;
+  sourcePolicyName?: string;
+  sourceDrifted?: boolean;
+  sourceDeleted?: boolean;
   createdByUserId: string;
   createdByEmail?: string;
   createdAt: string;
@@ -49,6 +57,9 @@ export interface EligiblePolicy {
   name: string;
   description?: string;
   targetResourceIds: string[];
+  /** Set when the policy mirrors an Access Control policy; name is for display. */
+  sourcePolicyId?: string;
+  sourcePolicyName?: string;
   maxDurationMinutes: number;
 }
 
@@ -80,7 +91,10 @@ export interface JitGrant {
 export interface CreateJitPolicyBody {
   name: string;
   description?: string;
-  targetResourceIds: string[];
+  // Provide exactly one of targetResourceIds (resource-based) or sourcePolicyId
+  // (mirror an existing Access Control policy). The backend enforces this.
+  targetResourceIds?: string[];
+  sourcePolicyId?: string;
   traffic?: Traffic;
   maxDurationMinutes: number;
   requestableBy: RequestableBy;
