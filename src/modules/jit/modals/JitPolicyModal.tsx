@@ -9,8 +9,9 @@ import { Modal, ModalClose, ModalContent, ModalFooter } from "@components/modal/
 import ModalHeader from "@components/modal/ModalHeader";
 import { PeerGroupSelector } from "@components/PeerGroupSelector";
 import { SelectDropdown } from "@components/select/SelectDropdown";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@components/Tabs";
 import { Textarea } from "@components/Textarea";
-import { AlertTriangleIcon, ServerIcon, ShieldCheckIcon, XIcon } from "lucide-react";
+import { AlertTriangleIcon, ServerIcon, ShieldCheckIcon, UsersIcon, XIcon } from "lucide-react";
 import * as React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useGroups } from "@/contexts/GroupsProvider";
@@ -31,11 +32,17 @@ type Props = {
 // creation (the backend rejects converting one to the other).
 type SourceMode = "policy" | "resources";
 
+// The create/edit form is split into two steps so it isn't one long scroll:
+// "policy" (what access, for how long) then "restrictions" (who may request /
+// approve).
+type Step = "policy" | "restrictions";
+
 export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
   const { resources, accessPolicies, createPolicy, updatePolicy } = useJit();
   const { groups } = useGroups();
   const isEdit = !!policy;
 
+  const [step, setStep] = useState<Step>("policy");
   const [mode, setMode] = useState<SourceMode>("policy");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -55,6 +62,7 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
   // (Re)initialise when the modal opens.
   useEffect(() => {
     if (!open) return;
+    setStep("policy"); // always start on the first step
     // Mode is derived from the policy on edit (and is then locked); a brand-new
     // policy defaults to mirroring an existing policy — the recommended path.
     setMode(policy ? (policy.sourcePolicyId ? "policy" : "resources") : "policy");
@@ -152,14 +160,23 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
       .map((r, i) => ({ key: r.id ?? `rule-${i}`, text: ruleSummary(r) }));
   }, [selectedPolicy, groups, resources]);
 
-  const invalid = useMemo(() => {
+  // Step 1 ("policy") completeness — gates the Continue button and the
+  // Restrictions tab. Restrictions are optional, so step 2 has no required
+  // fields beyond the group pickers (covered by `invalid`).
+  const step1Invalid = useMemo(() => {
     if (name.trim().length === 0) return true;
     if (mode === "policy" ? !sourcePolicyId : resourceIds.length === 0) return true;
     if (!max || max < 1) return true;
+    return false;
+  }, [name, mode, sourcePolicyId, resourceIds, max]);
+
+  // Full validity — gates the final submit (adds the restriction-group checks).
+  const invalid = useMemo(() => {
+    if (step1Invalid) return true;
     if (restrictRequesters && requesterGroupIds.length === 0) return true;
     if (restrictApprovers && approverGroupIds.length === 0) return true;
     return false;
-  }, [name, mode, sourcePolicyId, resourceIds, max, restrictRequesters, requesterGroupIds, restrictApprovers, approverGroupIds]);
+  }, [step1Invalid, restrictRequesters, requesterGroupIds, restrictApprovers, approverGroupIds]);
 
   const toggleResource = (id: string) =>
     setResourceIds((prev) => (prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id]));
@@ -212,198 +229,239 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
           description="Base temporary access on an existing Access Control policy, or pick resources directly. JIT provisions a hidden backing group and access policy."
           color="netbird"
         />
-        <div className="px-8 py-6 flex flex-col gap-6 max-h-[65vh] overflow-y-auto">
-          <div>
-            <Label>Name</Label>
-            <Input data-testid="jit-policy-name" placeholder="e.g. Prod database (break-glass)" value={name} onChange={(e) => setName(e.target.value)} />
-          </div>
 
-          <div>
-            <Label>Description <span className="text-nb-gray-400">(optional)</span></Label>
-            <Textarea data-testid="jit-policy-description" placeholder="What this grants and when to use it" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
-          </div>
+        <Tabs value={step} defaultValue="policy" onValueChange={(v) => setStep(v as Step)}>
+          <TabsList justify="start" className="px-8">
+            <TabsTrigger value="policy" data-testid="jit-tab-policy">
+              <ShieldCheckIcon size={14} /> Policy
+            </TabsTrigger>
+            {/* Restrictions stays out of reach until the policy step is complete,
+                so you can't reach a half-defined policy's restrictions. */}
+            <TabsTrigger value="restrictions" data-testid="jit-tab-restrictions" disabled={step1Invalid}>
+              <UsersIcon size={14} /> Restrictions
+            </TabsTrigger>
+          </TabsList>
 
-          {/* Access source. The flavor is fixed once created, so on edit we show
-              a static label instead of the toggle. */}
-          <div>
-            <Label>Access source</Label>
-            {isEdit ? (
-              <HelpText>
-                {mode === "policy"
-                  ? "Based on an existing Access Control policy (fixed — delete and recreate to change)."
-                  : "Based on hand-picked resources (fixed — delete and recreate to change)."}
-              </HelpText>
-            ) : (
-              <div className="mt-1 inline-flex rounded-md border border-nb-gray-800 bg-nb-gray-940 p-0.5" data-testid="jit-source-mode">
-                {(["policy", "resources"] as const).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    data-testid={`jit-source-mode-${m}`}
-                    aria-pressed={mode === m}
-                    onClick={() => setMode(m)}
-                    className={`px-3 py-1.5 text-sm rounded transition-colors ${
-                      mode === m ? "bg-nb-gray-800 text-white" : "text-nb-gray-400 hover:text-nb-gray-200"
-                    }`}
-                  >
-                    {m === "policy" ? "From an existing policy" : "From resources"}
-                  </button>
-                ))}
+          {/* Step 1: what the policy grants + for how long. */}
+          <TabsContent value="policy" className="px-8 pb-2">
+            <div className="flex flex-col gap-6 max-h-[55vh] overflow-y-auto pr-1">
+              <div>
+                <Label>Name</Label>
+                <Input data-testid="jit-policy-name" placeholder="e.g. Prod database (break-glass)" value={name} onChange={(e) => setName(e.target.value)} />
               </div>
-            )}
-          </div>
 
-          {mode === "policy" ? (
-            <div>
-              <Label>Access Control policy</Label>
-              <HelpText>The JIT policy grants the same destinations and ports this policy allows.</HelpText>
-              <div className="mt-1 flex flex-col gap-2">
-                <SelectDropdown
-                  value={sourcePolicyId}
-                  onChange={(id) => setSourcePolicyId(id)}
-                  options={policyOptions}
-                  showSearch
-                  placeholder="Select an Access Control policy…"
-                  searchPlaceholder="Search policies…"
-                  data-testid="jit-source-policy-select"
-                />
-                {(accessPolicies ?? []).length === 0 && (
-                  <HelpText>No Access Control policies found. Create one under Access Control, or switch to “From resources”.</HelpText>
-                )}
-                {isEdit && policy?.sourceDeleted && (
-                  <div className="flex items-center gap-2 rounded-md border border-red-900/60 bg-red-950/40 px-3 py-2 text-sm text-red-300" data-testid="jit-source-deleted">
-                    <AlertTriangleIcon size={15} />
-                    The source policy was deleted. This JIT policy keeps its last-synced access — re-point to another policy to change it.
-                  </div>
-                )}
-                {isEdit && !policy?.sourceDeleted && policy?.sourceDrifted && (
-                  <div className="flex items-center gap-2 rounded-md border border-amber-900/60 bg-amber-950/40 px-3 py-2 text-sm text-amber-300" data-testid="jit-source-drifted">
-                    <AlertTriangleIcon size={15} />
-                    The source policy changed since this was last synced. Saving re-syncs it to the current policy.
-                  </div>
-                )}
-                {selectedPolicy && (
-                  <div className="rounded-md border border-nb-gray-800 bg-nb-gray-940 px-3 py-2 text-sm text-nb-gray-300 flex flex-col gap-1" data-testid="jit-source-policy-summary">
-                    <span className="text-xs uppercase tracking-wide text-nb-gray-500">This policy grants</span>
-                    {summaryLines.length === 0 ? (
-                      <span className="text-nb-gray-400">No enabled rules — this policy would grant nothing.</span>
-                    ) : (
-                      summaryLines.map((line) => (
-                        <span key={line.key} className="flex items-center gap-2">
-                          <ServerIcon size={13} /> {line.text}
-                        </span>
-                      ))
-                    )}
-                  </div>
-                )}
+              <div>
+                <Label>Description <span className="text-nb-gray-400">(optional)</span></Label>
+                <Textarea data-testid="jit-policy-description" placeholder="What this grants and when to use it" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
               </div>
-            </div>
-          ) : (
-            <div>
-              <Label>Network resources</Label>
-              <HelpText>Search and add the resources this access grants.</HelpText>
-              <div className="mt-1 flex flex-col gap-2">
-                <SelectDropdown
-                  value=""
-                  onChange={(id) => toggleResource(id)}
-                  options={resourceOptions}
-                  showSearch
-                  placeholder="Add a network resource…"
-                  searchPlaceholder="Search resources…"
-                  data-testid="jit-resource-select"
-                />
-                {selectedResources.length > 0 && (
-                  <div className="flex flex-col gap-1.5">
-                    {selectedResources.map((r) => (
-                      <div
-                        key={r.id}
-                        data-testid="jit-resource-selected"
-                        className="flex items-center justify-between rounded-md border border-nb-gray-800 bg-nb-gray-940 px-3 py-2 text-sm text-nb-gray-200"
+
+              {/* Access source. The flavor is fixed once created, so on edit we show
+                  a static label instead of the toggle. */}
+              <div>
+                <Label>Access source</Label>
+                {isEdit ? (
+                  <HelpText>
+                    {mode === "policy"
+                      ? "Based on an existing Access Control policy (fixed — delete and recreate to change)."
+                      : "Based on hand-picked resources (fixed — delete and recreate to change)."}
+                  </HelpText>
+                ) : (
+                  <div className="mt-1 inline-flex rounded-md border border-nb-gray-800 bg-nb-gray-940 p-0.5" data-testid="jit-source-mode">
+                    {(["policy", "resources"] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        data-testid={`jit-source-mode-${m}`}
+                        aria-pressed={mode === m}
+                        onClick={() => setMode(m)}
+                        className={`px-3 py-1.5 text-sm rounded transition-colors ${
+                          mode === m ? "bg-nb-gray-800 text-white" : "text-nb-gray-400 hover:text-nb-gray-200"
+                        }`}
                       >
-                        <span className="flex items-center gap-2">
-                          <ServerIcon size={14} /> {r.name}
-                          {r.address ? <span className="text-nb-gray-400">({r.address})</span> : null}
-                        </span>
-                        <button
-                          type="button"
-                          aria-label={`Remove ${r.name}`}
-                          data-testid="jit-resource-remove"
-                          onClick={() => toggleResource(r.id)}
-                          className="text-nb-gray-400 transition-colors hover:text-red-400"
-                        >
-                          <XIcon size={15} />
-                        </button>
-                      </div>
+                        {m === "policy" ? "From an existing policy" : "From resources"}
+                      </button>
                     ))}
                   </div>
                 )}
-                {(resources ?? []).length === 0 && (
-                  <HelpText>No network resources found. Create some in Networks first.</HelpText>
-                )}
+              </div>
+
+              {mode === "policy" ? (
+                <div>
+                  <Label>Access Control policy</Label>
+                  <HelpText>The JIT policy grants the same destinations and ports this policy allows.</HelpText>
+                  <div className="mt-1 flex flex-col gap-2">
+                    <SelectDropdown
+                      value={sourcePolicyId}
+                      onChange={(id) => setSourcePolicyId(id)}
+                      options={policyOptions}
+                      showSearch
+                      placeholder="Select an Access Control policy…"
+                      searchPlaceholder="Search policies…"
+                      data-testid="jit-source-policy-select"
+                    />
+                    {(accessPolicies ?? []).length === 0 && (
+                      <HelpText>No Access Control policies found. Create one under Access Control, or switch to “From resources”.</HelpText>
+                    )}
+                    {isEdit && policy?.sourceDeleted && (
+                      <div className="flex items-center gap-2 rounded-md border border-red-900/60 bg-red-950/40 px-3 py-2 text-sm text-red-300" data-testid="jit-source-deleted">
+                        <AlertTriangleIcon size={15} />
+                        The source policy was deleted. This JIT policy keeps its last-synced access — re-point to another policy to change it.
+                      </div>
+                    )}
+                    {isEdit && !policy?.sourceDeleted && policy?.sourceDrifted && (
+                      <div className="flex items-center gap-2 rounded-md border border-amber-900/60 bg-amber-950/40 px-3 py-2 text-sm text-amber-300" data-testid="jit-source-drifted">
+                        <AlertTriangleIcon size={15} />
+                        The source policy changed since this was last synced. Saving re-syncs it to the current policy.
+                      </div>
+                    )}
+                    {selectedPolicy && (
+                      <div className="rounded-md border border-nb-gray-800 bg-nb-gray-940 px-3 py-2 text-sm text-nb-gray-300 flex flex-col gap-1" data-testid="jit-source-policy-summary">
+                        <span className="text-xs uppercase tracking-wide text-nb-gray-500">This policy grants</span>
+                        {summaryLines.length === 0 ? (
+                          <span className="text-nb-gray-400">No enabled rules — this policy would grant nothing.</span>
+                        ) : (
+                          summaryLines.map((line) => (
+                            <span key={line.key} className="flex items-center gap-2">
+                              <ServerIcon size={13} /> {line.text}
+                            </span>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <Label>Network resources</Label>
+                  <HelpText>Search and add the resources this access grants.</HelpText>
+                  <div className="mt-1 flex flex-col gap-2">
+                    <SelectDropdown
+                      value=""
+                      onChange={(id) => toggleResource(id)}
+                      options={resourceOptions}
+                      showSearch
+                      placeholder="Add a network resource…"
+                      searchPlaceholder="Search resources…"
+                      data-testid="jit-resource-select"
+                    />
+                    {selectedResources.length > 0 && (
+                      <div className="flex flex-col gap-1.5">
+                        {selectedResources.map((r) => (
+                          <div
+                            key={r.id}
+                            data-testid="jit-resource-selected"
+                            className="flex items-center justify-between rounded-md border border-nb-gray-800 bg-nb-gray-940 px-3 py-2 text-sm text-nb-gray-200"
+                          >
+                            <span className="flex items-center gap-2">
+                              <ServerIcon size={14} /> {r.name}
+                              {r.address ? <span className="text-nb-gray-400">({r.address})</span> : null}
+                            </span>
+                            <button
+                              type="button"
+                              aria-label={`Remove ${r.name}`}
+                              data-testid="jit-resource-remove"
+                              onClick={() => toggleResource(r.id)}
+                              className="text-nb-gray-400 transition-colors hover:text-red-400"
+                            >
+                              <XIcon size={15} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {(resources ?? []).length === 0 && (
+                      <HelpText>No network resources found. Create some in Networks first.</HelpText>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <Label>Maximum duration</Label>
+                <HelpText>The longest a user may request access for.</HelpText>
+                <JitDurationInput
+                  amount={maxAmount}
+                  unit={maxUnit}
+                  onAmountChange={setMaxAmount}
+                  onUnitChange={setMaxUnit}
+                  dataTestId="jit-policy-duration"
+                  error={max < 1 ? "Enter a duration of at least 1 minute" : undefined}
+                />
               </div>
             </div>
-          )}
+          </TabsContent>
 
-          <div>
-            <Label>Maximum duration</Label>
-            <HelpText>The longest a user may request access for.</HelpText>
-            <JitDurationInput
-              amount={maxAmount}
-              unit={maxUnit}
-              onAmountChange={setMaxAmount}
-              onUnitChange={setMaxUnit}
-              dataTestId="jit-policy-duration"
-              error={max < 1 ? "Enter a duration of at least 1 minute" : undefined}
-            />
-          </div>
-
-          <FancyToggleSwitch
-            value={restrictRequesters}
-            onChange={setRestrictRequesters}
-            label="Restrict who can request"
-            helpText="Off: anyone may request. On: only members of the chosen user groups — including IdP-synced groups. (JIT's own groups are never listed here.)"
-          >
-            {restrictRequesters && (
-              <div className="mt-3">
-                <PeerGroupSelector values={requesterGroups} onChange={setRequesterGroups} hideAllGroup={true} />
-                {!hasUserGroups && (
-                  <div className="mt-2">
-                    <HelpText>
-                      No user groups yet — create one under Team, or connect an identity provider. Leave this off to
-                      allow everyone.
-                    </HelpText>
+          {/* Step 2: who may request / approve. Both default off (no restriction). */}
+          <TabsContent value="restrictions" className="px-8 pb-2">
+            <div className="flex flex-col gap-6 max-h-[55vh] overflow-y-auto pr-1">
+              <FancyToggleSwitch
+                value={restrictRequesters}
+                onChange={setRestrictRequesters}
+                label="Restrict who can request"
+                helpText="Off: anyone may request. On: only members of the chosen user groups — including IdP-synced groups. (JIT's own groups are never listed here.)"
+              >
+                {restrictRequesters && (
+                  <div className="mt-3">
+                    <PeerGroupSelector values={requesterGroups} onChange={setRequesterGroups} hideAllGroup={true} />
+                    {!hasUserGroups && (
+                      <div className="mt-2">
+                        <HelpText>
+                          No user groups yet — create one under Team, or connect an identity provider. Leave this off to
+                          allow everyone.
+                        </HelpText>
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
-            )}
-          </FancyToggleSwitch>
+              </FancyToggleSwitch>
 
-          <FancyToggleSwitch
-            value={restrictApprovers}
-            onChange={setRestrictApprovers}
-            label="Restrict approvers to specific groups"
-            helpText="Off: any admin/owner can approve. On: also members of the chosen user groups (IdP groups included)."
-          >
-            {restrictApprovers && (
-              <div className="mt-3">
-                <PeerGroupSelector values={approverGroups} onChange={setApproverGroups} hideAllGroup={true} />
-                {!hasUserGroups && (
-                  <div className="mt-2">
-                    <HelpText>No user groups yet — create one under Team, or connect an identity provider.</HelpText>
+              <FancyToggleSwitch
+                value={restrictApprovers}
+                onChange={setRestrictApprovers}
+                label="Restrict approvers to specific groups"
+                helpText="Off: any admin/owner can approve. On: also members of the chosen user groups (IdP groups included)."
+              >
+                {restrictApprovers && (
+                  <div className="mt-3">
+                    <PeerGroupSelector values={approverGroups} onChange={setApproverGroups} hideAllGroup={true} />
+                    {!hasUserGroups && (
+                      <div className="mt-2">
+                        <HelpText>No user groups yet — create one under Team, or connect an identity provider.</HelpText>
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
-            )}
-          </FancyToggleSwitch>
-        </div>
+              </FancyToggleSwitch>
+            </div>
+          </TabsContent>
+        </Tabs>
+
         <ModalFooter className="items-center">
           <div className="flex gap-3 w-full justify-end">
-            <ModalClose asChild>
-              <Button variant="secondary" data-testid="jit-policy-cancel">Cancel</Button>
-            </ModalClose>
-            <Button variant="primary" data-testid="jit-policy-submit" disabled={invalid || submitting} onClick={submit}>
-              {isEdit ? "Save changes" : "Create JIT policy"}
-            </Button>
+            {step === "policy" ? (
+              <>
+                <ModalClose asChild>
+                  <Button variant="secondary" data-testid="jit-policy-cancel">Cancel</Button>
+                </ModalClose>
+                <Button
+                  variant="primary"
+                  data-testid="jit-policy-continue"
+                  disabled={step1Invalid}
+                  onClick={() => setStep("restrictions")}
+                >
+                  Continue
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="secondary" data-testid="jit-policy-back" onClick={() => setStep("policy")}>
+                  Back
+                </Button>
+                <Button variant="primary" data-testid="jit-policy-submit" disabled={invalid || submitting} onClick={submit}>
+                  {isEdit ? "Save changes" : "Create JIT policy"}
+                </Button>
+              </>
+            )}
           </div>
         </ModalFooter>
       </ModalContent>
