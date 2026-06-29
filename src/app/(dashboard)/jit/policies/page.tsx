@@ -20,7 +20,7 @@ import { formatDuration } from "@/modules/jit/misc/format";
 
 export default function JitPoliciesPage() {
   const { isOwnerOrAdmin } = useLoggedInUser();
-  const { policies, propagationEnabled, serviceUnavailable, deletePolicy } = useJit();
+  const { policies, propagationEnabled, serviceUnavailable, deletePolicy, updatePolicy } = useJit();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<JitPolicy | undefined>(undefined);
   const [search, setSearch] = useState("");
@@ -42,7 +42,26 @@ export default function JitPoliciesPage() {
 
   const columns: ColumnDef<JitPolicy>[] = [
     { accessorKey: "name", header: "Name", cell: ({ row }) => <span className="font-medium">{row.original.name}</span> },
-    { id: "resources", header: "Resources", cell: ({ row }) => `${row.original.targetResourceIds.length}` },
+    {
+      id: "access",
+      header: "Access",
+      cell: ({ row }) => {
+        const p = row.original;
+        if (p.sourcePolicyId) {
+          return (
+            <span className="flex items-center gap-2">
+              <span>Policy: {p.sourcePolicyName ?? "—"}</span>
+              {p.sourceDeleted ? (
+                <span className="text-xs text-red-400">source deleted</span>
+              ) : p.sourceDrifted ? (
+                <span className="text-xs text-amber-400">source changed</span>
+              ) : null}
+            </span>
+          );
+        }
+        return `${p.targetResourceIds.length} resource(s)`;
+      },
+    },
     { id: "max", header: "Max duration", cell: ({ row }) => formatDuration(row.original.maxDurationMinutes) },
     {
       id: "eligibility",
@@ -57,6 +76,16 @@ export default function JitPoliciesPage() {
       header: "",
       cell: ({ row }) => (
         <div className="flex gap-2 justify-end">
+          {row.original.sourcePolicyId && row.original.sourceDrifted && !row.original.sourceDeleted && (
+            <Button
+              variant="secondary"
+              size="xs"
+              data-testid="jit-policy-resync"
+              onClick={() => void updatePolicy(row.original.id, { sourcePolicyId: row.original.sourcePolicyId })}
+            >
+              Re-sync
+            </Button>
+          )}
           <Button variant="secondary" size="xs" data-testid="jit-policy-edit" onClick={() => openEdit(row.original)}>
             Edit
           </Button>

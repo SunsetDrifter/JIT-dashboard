@@ -10,11 +10,12 @@ import ModalHeader from "@components/modal/ModalHeader";
 import { PeerGroupSelector } from "@components/PeerGroupSelector";
 import { SelectDropdown } from "@components/select/SelectDropdown";
 import { Textarea } from "@components/Textarea";
-import { ServerIcon, ShieldCheckIcon, XIcon } from "lucide-react";
+import { AlertTriangleIcon, ServerIcon, ShieldCheckIcon, XIcon } from "lucide-react";
 import * as React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useGroups } from "@/contexts/GroupsProvider";
 import type { Group } from "@/interfaces/Group";
+import type { Policy, PolicyRule } from "@/interfaces/Policy";
 import type { CreateJitPolicyBody, JitPolicy } from "../interfaces/Jit";
 import { useJit } from "../JitProvider";
 import { JitDurationInput, durationToMinutes, minutesToDuration } from "../misc/JitDurationInput";
@@ -25,14 +26,21 @@ type Props = {
   policy?: JitPolicy; // present = edit
 };
 
+// SourceMode selects how the JIT policy's access is defined: mirror an existing
+// Access Control policy, or hand-pick resources. The flavor is fixed at
+// creation (the backend rejects converting one to the other).
+type SourceMode = "policy" | "resources";
+
 export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
-  const { resources, createPolicy, updatePolicy } = useJit();
+  const { resources, accessPolicies, createPolicy, updatePolicy } = useJit();
   const { groups } = useGroups();
   const isEdit = !!policy;
 
+  const [mode, setMode] = useState<SourceMode>("policy");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [resourceIds, setResourceIds] = useState<string[]>([]);
+  const [sourcePolicyId, setSourcePolicyId] = useState("");
   const [maxAmount, setMaxAmount] = useState(() => minutesToDuration(240).amount);
   const [maxUnit, setMaxUnit] = useState(() => minutesToDuration(240).unit);
   const [restrictRequesters, setRestrictRequesters] = useState(false);
@@ -47,9 +55,13 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
   // (Re)initialise when the modal opens.
   useEffect(() => {
     if (!open) return;
+    // Mode is derived from the policy on edit (and is then locked); a brand-new
+    // policy defaults to mirroring an existing policy — the recommended path.
+    setMode(policy ? (policy.sourcePolicyId ? "policy" : "resources") : "policy");
     setName(policy?.name ?? "");
     setDescription(policy?.description ?? "");
     setResourceIds(policy?.targetResourceIds ?? []);
+    setSourcePolicyId(policy?.sourcePolicyId ?? "");
     const dur = minutesToDuration(policy?.maxDurationMinutes ?? 240);
     setMaxAmount(dur.amount);
     setMaxUnit(dur.unit);
@@ -96,38 +108,83 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
     [resources, resourceIds],
   );
 
+  // Policy picker: list every visible Access Control policy (JIT-owned ones are
+  // already filtered out server-side). The currently-selected policy may be
+  // absent from the list if it was deleted — that's surfaced separately.
+  const policyOptions = useMemo(
+    () =>
+      (accessPolicies ?? [])
+        .filter((p): p is Policy & { id: string } => !!p.id)
+        .map((p) => ({ value: p.id, label: p.name, searchValue: `${p.name} ${p.description ?? ""}` })),
+    [accessPolicies],
+  );
+  const selectedPolicy = useMemo(
+    () => (accessPolicies ?? []).find((p) => p.id === sourcePolicyId),
+    [accessPolicies, sourcePolicyId],
+  );
+
+  // Human-readable summary of what a source policy grants, per rule.
+  const groupLabel = (g: string | Group): string =>
+    typeof g === "object" ? (g.name ?? g.id ?? "group") : ((groups ?? []).find((x) => x.id === g)?.name ?? g);
+  const resourceLabel = (id: string): string => (resources ?? []).find((r) => r.id === id)?.name ?? id;
+  const ruleSummary = (r: PolicyRule): string => {
+    const proto = (r.protocol ?? "all").toString().toUpperCase();
+    const ports = r.ports && r.ports.length ? `:${r.ports.join(",")}` : "";
+    let dest = "—";
+    if (r.destinationResource?.id) dest = resourceLabel(r.destinationResource.id);
+    else if (r.destinations && r.destinations.length)
+      dest = (r.destinations as (string | Group)[]).map(groupLabel).join(", ");
+    const verb = r.action === "drop" ? "deny" : "allow";
+    return `${verb} ${proto}${ports} → ${dest}`;
+  };
+  const summaryRules = useMemo(
+    () => (selectedPolicy?.rules ?? []).filter((r) => r.enabled),
+    [selectedPolicy],
+  );
+
   const invalid = useMemo(() => {
     if (name.trim().length === 0) return true;
-    if (resourceIds.length === 0) return true;
+    if (mode === "policy" ? !sourcePolicyId : resourceIds.length === 0) return true;
     if (!max || max < 1) return true;
     if (restrictRequesters && requesterGroupIds.length === 0) return true;
     if (restrictApprovers && approverGroupIds.length === 0) return true;
     return false;
-  }, [name, resourceIds, max, restrictRequesters, requesterGroupIds, restrictApprovers, approverGroupIds]);
+  }, [name, mode, sourcePolicyId, resourceIds, max, restrictRequesters, requesterGroupIds, restrictApprovers, approverGroupIds]);
 
   const toggleResource = (id: string) =>
     setResourceIds((prev) => (prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id]));
 
   const submit = async () => {
     if (invalid) return;
-    const body: CreateJitPolicyBody = {
+    // Shared fields. Eligibility/approvers are admin-set in both modes.
+    const common = {
       name: name.trim(),
       description: description.trim() || undefined,
-      targetResourceIds: resourceIds,
       maxDurationMinutes: max,
-      requestableBy:
-        restrictRequesters && requesterGroupIds.length
-          ? { mode: "groups", groupIds: requesterGroupIds }
-          : { mode: "all" },
-      approverCriteria:
-        restrictApprovers && approverGroupIds.length
-          ? { mode: "groups", groupIds: approverGroupIds }
-          : { mode: "any_admin" },
+      requestableBy: (restrictRequesters && requesterGroupIds.length
+        ? { mode: "groups" as const, groupIds: requesterGroupIds }
+        : { mode: "all" as const }),
+      approverCriteria: (restrictApprovers && approverGroupIds.length
+        ? { mode: "groups" as const, groupIds: approverGroupIds }
+        : { mode: "any_admin" as const }),
     };
     setSubmitting(true);
     try {
-      if (isEdit && policy) await updatePolicy(policy.id, body);
-      else await createPolicy(body);
+      if (isEdit && policy) {
+        // Mirror edits always re-send sourcePolicyId, so saving re-points (if the
+        // source changed) or re-syncs to the current source (clearing drift).
+        const body =
+          mode === "policy"
+            ? { ...common, sourcePolicyId }
+            : { ...common, targetResourceIds: resourceIds };
+        await updatePolicy(policy.id, body);
+      } else {
+        const body: CreateJitPolicyBody =
+          mode === "policy"
+            ? { ...common, sourcePolicyId }
+            : { ...common, targetResourceIds: resourceIds };
+        await createPolicy(body);
+      }
       onOpenChange(false);
     } catch {
       /* notify surfaces the error */
@@ -142,7 +199,7 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
         <ModalHeader
           icon={<ShieldCheckIcon size={18} />}
           title={isEdit ? "Edit JIT policy" : "Create JIT policy"}
-          description="Define temporary access to network resources. JIT provisions a hidden backing group and access policy."
+          description="Base temporary access on an existing Access Control policy, or pick resources directly. JIT provisions a hidden backing group and access policy."
           color="netbird"
         />
         <div className="px-8 py-6 flex flex-col gap-6 max-h-[65vh] overflow-y-auto">
@@ -156,49 +213,125 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
             <Textarea data-testid="jit-policy-description" placeholder="What this grants and when to use it" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
           </div>
 
+          {/* Access source. The flavor is fixed once created, so on edit we show
+              a static label instead of the toggle. */}
           <div>
-            <Label>Network resources</Label>
-            <HelpText>Search and add the resources this access grants.</HelpText>
-            <div className="mt-1 flex flex-col gap-2">
-              <SelectDropdown
-                value=""
-                onChange={(id) => toggleResource(id)}
-                options={resourceOptions}
-                showSearch
-                placeholder="Add a network resource…"
-                searchPlaceholder="Search resources…"
-                data-testid="jit-resource-select"
-              />
-              {selectedResources.length > 0 && (
-                <div className="flex flex-col gap-1.5">
-                  {selectedResources.map((r) => (
-                    <div
-                      key={r.id}
-                      data-testid="jit-resource-selected"
-                      className="flex items-center justify-between rounded-md border border-nb-gray-800 bg-nb-gray-940 px-3 py-2 text-sm text-nb-gray-200"
-                    >
-                      <span className="flex items-center gap-2">
-                        <ServerIcon size={14} /> {r.name}
-                        {r.address ? <span className="text-nb-gray-400">({r.address})</span> : null}
-                      </span>
-                      <button
-                        type="button"
-                        aria-label={`Remove ${r.name}`}
-                        data-testid="jit-resource-remove"
-                        onClick={() => toggleResource(r.id)}
-                        className="text-nb-gray-400 transition-colors hover:text-red-400"
-                      >
-                        <XIcon size={15} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {(resources ?? []).length === 0 && (
-                <HelpText>No network resources found. Create some in Networks first.</HelpText>
-              )}
-            </div>
+            <Label>Access source</Label>
+            {isEdit ? (
+              <HelpText>
+                {mode === "policy"
+                  ? "Based on an existing Access Control policy (fixed — delete and recreate to change)."
+                  : "Based on hand-picked resources (fixed — delete and recreate to change)."}
+              </HelpText>
+            ) : (
+              <div className="mt-1 inline-flex rounded-md border border-nb-gray-800 bg-nb-gray-940 p-0.5" data-testid="jit-source-mode">
+                {(["policy", "resources"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    data-testid={`jit-source-mode-${m}`}
+                    onClick={() => setMode(m)}
+                    className={`px-3 py-1.5 text-sm rounded transition-colors ${
+                      mode === m ? "bg-nb-gray-800 text-white" : "text-nb-gray-400 hover:text-nb-gray-200"
+                    }`}
+                  >
+                    {m === "policy" ? "From an existing policy" : "From resources"}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
+
+          {mode === "policy" ? (
+            <div>
+              <Label>Access Control policy</Label>
+              <HelpText>The JIT policy grants the same destinations and ports this policy allows.</HelpText>
+              <div className="mt-1 flex flex-col gap-2">
+                <SelectDropdown
+                  value={sourcePolicyId}
+                  onChange={(id) => setSourcePolicyId(id)}
+                  options={policyOptions}
+                  showSearch
+                  placeholder="Select an Access Control policy…"
+                  searchPlaceholder="Search policies…"
+                  data-testid="jit-source-policy-select"
+                />
+                {(accessPolicies ?? []).length === 0 && (
+                  <HelpText>No Access Control policies found. Create one under Access Control, or switch to “From resources”.</HelpText>
+                )}
+                {isEdit && policy?.sourceDeleted && (
+                  <div className="flex items-center gap-2 rounded-md border border-red-900/60 bg-red-950/40 px-3 py-2 text-sm text-red-300" data-testid="jit-source-deleted">
+                    <AlertTriangleIcon size={15} />
+                    The source policy was deleted. This JIT policy keeps its last-synced access — re-point to another policy to change it.
+                  </div>
+                )}
+                {isEdit && !policy?.sourceDeleted && policy?.sourceDrifted && (
+                  <div className="flex items-center gap-2 rounded-md border border-amber-900/60 bg-amber-950/40 px-3 py-2 text-sm text-amber-300" data-testid="jit-source-drifted">
+                    <AlertTriangleIcon size={15} />
+                    The source policy changed since this was last synced. Saving re-syncs it to the current policy.
+                  </div>
+                )}
+                {selectedPolicy && (
+                  <div className="rounded-md border border-nb-gray-800 bg-nb-gray-940 px-3 py-2 text-sm text-nb-gray-300 flex flex-col gap-1" data-testid="jit-source-policy-summary">
+                    <span className="text-xs uppercase tracking-wide text-nb-gray-500">This policy grants</span>
+                    {summaryRules.length === 0 ? (
+                      <span className="text-nb-gray-400">No enabled rules — this policy would grant nothing.</span>
+                    ) : (
+                      summaryRules.map((r, i) => (
+                        <span key={r.id ?? i} className="flex items-center gap-2">
+                          <ServerIcon size={13} /> {ruleSummary(r)}
+                        </span>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div>
+              <Label>Network resources</Label>
+              <HelpText>Search and add the resources this access grants.</HelpText>
+              <div className="mt-1 flex flex-col gap-2">
+                <SelectDropdown
+                  value=""
+                  onChange={(id) => toggleResource(id)}
+                  options={resourceOptions}
+                  showSearch
+                  placeholder="Add a network resource…"
+                  searchPlaceholder="Search resources…"
+                  data-testid="jit-resource-select"
+                />
+                {selectedResources.length > 0 && (
+                  <div className="flex flex-col gap-1.5">
+                    {selectedResources.map((r) => (
+                      <div
+                        key={r.id}
+                        data-testid="jit-resource-selected"
+                        className="flex items-center justify-between rounded-md border border-nb-gray-800 bg-nb-gray-940 px-3 py-2 text-sm text-nb-gray-200"
+                      >
+                        <span className="flex items-center gap-2">
+                          <ServerIcon size={14} /> {r.name}
+                          {r.address ? <span className="text-nb-gray-400">({r.address})</span> : null}
+                        </span>
+                        <button
+                          type="button"
+                          aria-label={`Remove ${r.name}`}
+                          data-testid="jit-resource-remove"
+                          onClick={() => toggleResource(r.id)}
+                          className="text-nb-gray-400 transition-colors hover:text-red-400"
+                        >
+                          <XIcon size={15} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {(resources ?? []).length === 0 && (
+                  <HelpText>No network resources found. Create some in Networks first.</HelpText>
+                )}
+              </div>
+            </div>
+          )}
 
           <div>
             <Label>Maximum duration</Label>
