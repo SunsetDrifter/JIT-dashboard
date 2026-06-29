@@ -71,6 +71,11 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
     const ac = policy?.approverCriteria;
     setRestrictApprovers(ac?.mode === "groups");
     setApproverGroups(ac?.mode === "groups" ? resolveGroups(ac.groupIds) : []);
+    // Intentional snapshot-on-open: this effect seeds the form from `policy`
+    // exactly when the modal opens. It must NOT re-run when other closed-over
+    // values (groups/resources) change — that would clobber the admin's
+    // in-progress edits. GroupsProvider loads groups on app mount, so they are
+    // resolved by the time the modal is opened.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, policy]);
 
@@ -123,24 +128,29 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
     [accessPolicies, sourcePolicyId],
   );
 
-  // Human-readable summary of what a source policy grants, per rule.
-  const groupLabel = (g: string | Group): string =>
-    typeof g === "object" ? (g.name ?? g.id ?? "group") : ((groups ?? []).find((x) => x.id === g)?.name ?? g);
-  const resourceLabel = (id: string): string => (resources ?? []).find((r) => r.id === id)?.name ?? id;
-  const ruleSummary = (r: PolicyRule): string => {
-    const proto = (r.protocol ?? "all").toString().toUpperCase();
-    const ports = r.ports && r.ports.length ? `:${r.ports.join(",")}` : "";
-    let dest = "—";
-    if (r.destinationResource?.id) dest = resourceLabel(r.destinationResource.id);
-    else if (r.destinations && r.destinations.length)
-      dest = (r.destinations as (string | Group)[]).map(groupLabel).join(", ");
-    const verb = r.action === "drop" ? "deny" : "allow";
-    return `${verb} ${proto}${ports} → ${dest}`;
-  };
-  const summaryRules = useMemo(
-    () => (selectedPolicy?.rules ?? []).filter((r) => r.enabled),
-    [selectedPolicy],
-  );
+  // Human-readable summary of what the selected source policy grants, one line
+  // per enabled rule. Memoised over its inputs so the formatted strings (and
+  // their identities) stay stable until the policy/groups/resources change.
+  const summaryLines = useMemo(() => {
+    const groupLabel = (g: string | Group): string =>
+      typeof g === "object" ? (g.name ?? g.id ?? "group") : ((groups ?? []).find((x) => x.id === g)?.name ?? g);
+    const resourceLabel = (id: string): string => (resources ?? []).find((r) => r.id === id)?.name ?? id;
+    const ruleSummary = (r: PolicyRule): string => {
+      const proto = (r.protocol ?? "all").toString().toUpperCase();
+      const ports = r.ports && r.ports.length ? `:${r.ports.join(",")}` : "";
+      let dest = "—";
+      if (r.destinationResource?.id) dest = resourceLabel(r.destinationResource.id);
+      else if (r.destinations && r.destinations.length)
+        dest = (r.destinations as (string | Group)[]).map(groupLabel).join(", ");
+      const verb = r.action === "drop" ? "deny" : "allow";
+      return `${verb} ${proto}${ports} → ${dest}`;
+    };
+    return (selectedPolicy?.rules ?? [])
+      .filter((r) => r.enabled)
+      // Read-only, non-reorderable list, so an index fallback key is safe when a
+      // rule has no id.
+      .map((r, i) => ({ key: r.id ?? `rule-${i}`, text: ruleSummary(r) }));
+  }, [selectedPolicy, groups, resources]);
 
   const invalid = useMemo(() => {
     if (name.trim().length === 0) return true;
@@ -230,6 +240,7 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
                     key={m}
                     type="button"
                     data-testid={`jit-source-mode-${m}`}
+                    aria-pressed={mode === m}
                     onClick={() => setMode(m)}
                     className={`px-3 py-1.5 text-sm rounded transition-colors ${
                       mode === m ? "bg-nb-gray-800 text-white" : "text-nb-gray-400 hover:text-nb-gray-200"
@@ -274,12 +285,12 @@ export function JitPolicyModal({ open, onOpenChange, policy }: Props) {
                 {selectedPolicy && (
                   <div className="rounded-md border border-nb-gray-800 bg-nb-gray-940 px-3 py-2 text-sm text-nb-gray-300 flex flex-col gap-1" data-testid="jit-source-policy-summary">
                     <span className="text-xs uppercase tracking-wide text-nb-gray-500">This policy grants</span>
-                    {summaryRules.length === 0 ? (
+                    {summaryLines.length === 0 ? (
                       <span className="text-nb-gray-400">No enabled rules — this policy would grant nothing.</span>
                     ) : (
-                      summaryRules.map((r, i) => (
-                        <span key={r.id ?? i} className="flex items-center gap-2">
-                          <ServerIcon size={13} /> {ruleSummary(r)}
+                      summaryLines.map((line) => (
+                        <span key={line.key} className="flex items-center gap-2">
+                          <ServerIcon size={13} /> {line.text}
                         </span>
                       ))
                     )}

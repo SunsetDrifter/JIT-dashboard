@@ -68,7 +68,7 @@ export function JitProvider({ children }: { children: React.ReactNode }) {
 
   // Access Control policies — candidate sources for mirror-type JIT policies.
   // JIT-owned policies are already filtered out of /policies server-side.
-  const { data: accessPolicies } = useFetchApi<Policy[]>(
+  const { data: rawAccessPolicies } = useFetchApi<Policy[]>(
     "/policies",
     true,
     true,
@@ -229,8 +229,10 @@ export function JitProvider({ children }: { children: React.ReactNode }) {
       "Extending…",
     );
 
-  // Memoised resources so the modal's useMemo deps stay stable.
+  // Memoised resources + access policies so the modal's useMemo deps stay stable
+  // (useFetchApi can hand back a new array reference before data settles).
   const resources = useMemo(() => rawResources, [rawResources]);
+  const accessPolicies = useMemo(() => rawAccessPolicies, [rawAccessPolicies]);
 
   const value: JitContextValue = {
     isAdmin: isOwnerOrAdmin,
