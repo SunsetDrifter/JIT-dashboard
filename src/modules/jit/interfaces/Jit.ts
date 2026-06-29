@@ -33,8 +33,10 @@ export interface JitPolicy {
   approverCriteria: ApproverCriteria;
   pendingTtlMinutes: number;
   enabled: boolean;
-  backingGroupId: string | null;
-  netbirdPolicyId: string | null;
+  // Backing group / access-policy IDs. The backend omits these when unset
+  // (absent, not null), so they're optional.
+  backingGroupId?: string;
+  netbirdPolicyId?: string;
   createdByUserId: string;
   createdByEmail?: string;
   createdAt: string;
@@ -53,7 +55,7 @@ export interface EligiblePolicy {
 export interface JitGrant {
   id: string;
   policyId: string;
-  /** Policy name — sent by the backend when present; resolved client-side as fallback. */
+  /** Policy name — not sent by the native backend; resolved client-side from the policies list. */
   policyName?: string;
   /** When set, this grant renews/replaces the referenced grant on activation. */
   supersedesGrantId?: string;
