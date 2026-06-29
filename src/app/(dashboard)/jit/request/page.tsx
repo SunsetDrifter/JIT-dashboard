@@ -23,13 +23,20 @@ export default function JitRequestPage() {
   const [selected, setSelected] = useState<EligiblePolicy | null>(null);
   const [extendPolicy, setExtendPolicy] = useState<EligiblePolicy | null>(null);
 
+  // A user can't fetch /jit/policies (admin-only), so resolve each grant's
+  // policy name from the eligible-policies list they CAN see.
+  const policyNameById = React.useMemo(
+    () => new Map((eligiblePolicies ?? []).map((p) => [p.id, p.name] as const)),
+    [eligiblePolicies],
+  );
+
   const columns: ColumnDef<JitGrant>[] = [
     {
       id: "policy",
       header: "Policy",
       cell: ({ row }) => (
         <span className="flex items-center gap-2">
-          {row.original.policyName ?? "—"}
+          {row.original.policyName ?? policyNameById.get(row.original.policyId) ?? "—"}
           {row.original.supersedesGrantId && (
             <span>
               <Badge variant="blue" className="capitalize">extension</Badge>
@@ -82,7 +89,7 @@ export default function JitRequestPage() {
         <Paragraph>Request temporary, time-boxed access to network resources. Access expires automatically.</Paragraph>
       </div>
 
-      <div className="p-default flex flex-col gap-8 pb-10">
+      <div className="p-default pb-8">
         <section>
           <h2 className="text-base font-medium mb-3">Available access</h2>
           {eligiblePolicies && eligiblePolicies.length > 0 ? (
@@ -133,23 +140,25 @@ export default function JitRequestPage() {
             </Callout>
           )}
         </section>
-
-        <section>
-          <h2 className="text-base font-medium mb-3">My requests</h2>
-          {/* DataTable carries its own p-default toolbar gutter; cancel the page
-              wrapper's p-default here so the search + rows align left with the
-              headings, matching the other list pages. The refresh button rides in
-              the toolbar to the right of the search, matching the Peers pages. */}
-          <DataTable
-            columns={columns}
-            data={myRequests ?? []}
-            text="requests"
-            className="-mx-4 sm:-mx-6 md:-mx-8"
-          >
-            {() => <DataTableRefreshButton onClick={() => void refreshMine()} />}
-          </DataTable>
-        </section>
       </div>
+
+      {/* Full-width section: the heading carries the p-default gutter to align
+          with the page, while the DataTable renders in a full-width parent (no
+          p-default, no negative margins) so its column header bar spans all the
+          way across — matching the Access Control Policies page. The DataTable's
+          own toolbar re-adds p-default; the refresh button sits in the toolbar
+          (children) beside the search, like the Peers page. */}
+      <section className="pb-10">
+        <h2 className="p-default text-base font-medium mb-3">My requests</h2>
+        <DataTable
+          columns={columns}
+          data={myRequests ?? []}
+          text="requests"
+          inset={false}
+        >
+          {() => <DataTableRefreshButton onClick={() => void refreshMine()} />}
+        </DataTable>
+      </section>
 
       {selected && (
         <JitRequestModal

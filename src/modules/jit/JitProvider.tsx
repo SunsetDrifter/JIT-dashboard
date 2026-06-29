@@ -1,15 +1,17 @@
 "use client";
 
 import { notify } from "@components/Notification";
-import React, { createContext, useContext } from "react";
+import React, { createContext, useContext, useMemo } from "react";
 import { useDialog } from "@/contexts/DialogProvider";
 import { useLoggedInUser } from "@/contexts/UsersProvider";
+import { useAccount } from "@/modules/account/useAccount";
+import useFetchApi from "@utils/api";
+import type { NetworkResource } from "@/interfaces/Network";
 import { useJitCall, useJitFetch } from "./hooks/useJitApi";
 import type {
   CreateJitPolicyBody,
   EligiblePolicy,
   JitGrant,
-  JitMe,
   JitNetworkResource,
   JitPolicy,
 } from "./interfaces/Jit";
@@ -17,12 +19,10 @@ import type {
 type UpdatePolicyBody = Partial<CreateJitPolicyBody> & { enabled?: boolean };
 
 type JitContextValue = {
-  me?: JitMe;
   isAdmin: boolean;
-  // undefined = unknown (/me still loading or unreachable); only `false` means the
-  // backend confirmed propagation is off. Never coerce an error to a boolean here.
+  // undefined = unknown (account still loading); only `false` means propagation is off.
   propagationEnabled?: boolean;
-  // True when /me could not be reached, so JIT state (incl. propagation) is unknown.
+  // True when the JIT API is unreachable.
   serviceUnavailable: boolean;
   policies?: JitPolicy[];
   resources?: JitNetworkResource[];
@@ -51,24 +51,36 @@ export function JitProvider({ children }: { children: React.ReactNode }) {
   const { isOwnerOrAdmin } = useLoggedInUser();
   const { confirm } = useDialog();
 
-  const me = useJitFetch<JitMe>("/me");
-  const eligible = useJitFetch<EligiblePolicy[]>("/policies/eligible");
-  const mine = useJitFetch<JitGrant[]>("/requests/mine");
-  const policies = useJitFetch<JitPolicy[]>("/admin/policies", isOwnerOrAdmin);
-  const resources = useJitFetch<JitNetworkResource[]>("/admin/network-resources", isOwnerOrAdmin);
-  const pending = useJitFetch<JitGrant[]>("/admin/requests?status=pending", isOwnerOrAdmin, 30_000);
-  const active = useJitFetch<JitGrant[]>("/admin/grants/active", isOwnerOrAdmin, 30_000);
+  // Native account settings — source of propagationEnabled.
+  const account = useAccount();
+  const propagationEnabled = account?.settings.groups_propagation_enabled;
 
-  const policyCall = useJitCall<JitPolicy>("/admin/policies");
-  const requestCall = useJitCall<JitGrant>("/requests");
-  const adminReqCall = useJitCall<JitGrant>("/admin/requests");
-  const grantCall = useJitCall<JitGrant>("/grants");
-  const adminGrantCall = useJitCall<JitGrant>("/admin/grants");
+  // Native network resources replaces the dropped /admin/network-resources endpoint.
+  const { data: rawResources } = useFetchApi<NetworkResource[]>(
+    "/networks/resources",
+    true,
+    true,
+    isOwnerOrAdmin,
+  );
+
+  // JIT endpoints — all now on native /api/jit/...
+  const eligible = useJitFetch<EligiblePolicy[]>("/jit/policies/eligible");
+  const mine = useJitFetch<JitGrant[]>("/jit/requests/mine");
+  const policies = useJitFetch<JitPolicy[]>("/jit/policies", isOwnerOrAdmin);
+  const pending = useJitFetch<JitGrant[]>("/jit/requests?status=pending", isOwnerOrAdmin, 30_000);
+  const active = useJitFetch<JitGrant[]>("/jit/grants/active", isOwnerOrAdmin, 30_000);
+
+  const policyCall = useJitCall<JitPolicy>("/jit/policies");
+  const requestCall = useJitCall<JitGrant>("/jit/requests");
+  const grantCall = useJitCall<JitGrant>("/jit/grants");
+
+  // serviceUnavailable: signal a JIT API problem if the eligible-policies
+  // fetch errors (it runs for all users, so it's the best canary).
+  const serviceUnavailable = Boolean(eligible.error);
 
   const refreshAdmin = (): Promise<void> =>
     Promise.all([policies.mutate(), pending.mutate(), active.mutate()]).then(() => undefined);
 
-  // Request Access page: refetch what the requester sees (eligible policies + own requests).
   const refreshMine = (): Promise<void> =>
     Promise.all([eligible.mutate(), mine.mutate()]).then(() => undefined);
 
@@ -77,8 +89,6 @@ export function JitProvider({ children }: { children: React.ReactNode }) {
     return promise.then(() => undefined);
   };
 
-  // Policy CRUD also changes what the current user is eligible to request, so
-  // refresh both the admin list and the requester's eligible list.
   const refreshPolicies = () => {
     void eligible.mutate();
     return policies.mutate();
@@ -165,7 +175,7 @@ export function JitProvider({ children }: { children: React.ReactNode }) {
 
   const approveRequest = (id: string) =>
     run(
-      adminReqCall.post({}, `/${id}/approve`).then(() => {
+      requestCall.post({}, `/${id}/approve`).then(() => {
         void pending.mutate();
         return active.mutate();
       }),
@@ -176,7 +186,7 @@ export function JitProvider({ children }: { children: React.ReactNode }) {
 
   const denyRequest = (id: string, reason?: string) =>
     run(
-      adminReqCall.post({ reason }, `/${id}/deny`).then(() => pending.mutate()),
+      requestCall.post({ reason }, `/${id}/deny`).then(() => pending.mutate()),
       "Deny request",
       "Request denied",
       "Denying…",
@@ -192,7 +202,7 @@ export function JitProvider({ children }: { children: React.ReactNode }) {
     });
     if (!choice) return;
     await run(
-      adminGrantCall.post({}, `/${id}/revoke`).then(() => active.mutate()),
+      grantCall.post({}, `/${id}/revoke`).then(() => active.mutate()),
       "Revoke grant",
       "Grant revoked",
       "Revoking…",
@@ -201,28 +211,26 @@ export function JitProvider({ children }: { children: React.ReactNode }) {
 
   const extendGrant = (id: string, durationMinutes: number) =>
     run(
-      adminGrantCall.post({ durationMinutes }, `/${id}/extend`).then(() => active.mutate()),
+      grantCall.post({ durationMinutes }, `/${id}/extend`).then(() => active.mutate()),
       "Extend grant",
       "Grant extended",
       "Extending…",
     );
 
+  // Memoised resources so the modal's useMemo deps stay stable.
+  const resources = useMemo(() => rawResources, [rawResources]);
+
   const value: JitContextValue = {
-    me: me.data,
-    isAdmin: me.data?.isAdmin ?? isOwnerOrAdmin,
-    // Only the backend's explicit value counts; undefined (loading/unreachable) is
-    // "unknown", never reported as "off" — coercing an error to false produced a
-    // bogus "propagation disabled" warning whenever /me failed. Unreachability is
-    // surfaced separately via serviceUnavailable.
-    propagationEnabled: me.data?.propagationEnabled,
-    serviceUnavailable: Boolean(me.error),
+    isAdmin: isOwnerOrAdmin,
+    propagationEnabled,
+    serviceUnavailable,
     policies: policies.data,
-    resources: resources.data,
+    resources,
     eligiblePolicies: eligible.data,
     myRequests: mine.data,
     pendingRequests: pending.data,
     activeGrants: active.data,
-    isLoading: me.isLoading || mine.isLoading,
+    isLoading: mine.isLoading,
     refreshAdmin,
     refreshMine,
     createPolicy,

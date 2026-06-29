@@ -109,22 +109,24 @@ export default function JitPoliciesPage() {
           </Button>
           <DataTableGlobalSearch globalSearch={search} setGlobalSearch={setSearch} placeholder="Search..." />
         </div>
-        <div className="p-default">
-          <DataTable
-            columns={columns}
-            data={visiblePolicies}
-            text="JIT policies"
-            showSearchAndFilters={false}
-            getStartedCard={
-              (policies?.length ?? 0) === 0 ? (
-                <div className="text-center py-10 text-nb-gray-400 flex flex-col items-center gap-2">
-                  <ShieldCheckIcon size={28} />
-                  <span>No JIT policies yet. Create one to offer temporary access.</span>
-                </div>
-              ) : undefined
-            }
-          />
-        </div>
+        {/* Rendered directly (no p-default wrapper) so the table + its column
+            header bar span the full width, like the Access Control Policies
+            page. The toolbar above keeps its own p-default gutter. */}
+        <DataTable
+          columns={columns}
+          data={visiblePolicies}
+          text="JIT policies"
+          showSearchAndFilters={false}
+          inset={false}
+          getStartedCard={
+            (policies?.length ?? 0) === 0 ? (
+              <div className="text-center py-10 text-nb-gray-400 flex flex-col items-center gap-2">
+                <ShieldCheckIcon size={28} />
+                <span>No JIT policies yet. Create one to offer temporary access.</span>
+              </div>
+            ) : undefined
+          }
+        />
       </RestrictedAccess>
 
       <JitPolicyModal open={open} onOpenChange={setOpen} policy={editing} />

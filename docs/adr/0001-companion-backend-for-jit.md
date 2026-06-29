@@ -1,5 +1,9 @@
 # Companion backend service for JIT access
 
+> **Superseded by [0005](0005-jit-in-management-server.md).** JIT was re-platformed into the management server fork; the companion backend (`jit-service/`) has been retired. The historical context below explains the original decision.
+
+---
+
 The dashboard is a static export (`output: "export"`) with no server, and all NetBird calls use the logged-in user's OIDC token (a regular user lacks `users.update`/`groups.update`). Reliable time-based revocation needs a scheduler, and self-service grants need privileged group mutations — neither is possible in a static SPA — so JIT is implemented as a small, isolated companion backend (`jit-service/`, Node/TS/Fastify/SQLite) that holds a NetBird service token and runs the expiry scheduler.
 
 ## Consequences

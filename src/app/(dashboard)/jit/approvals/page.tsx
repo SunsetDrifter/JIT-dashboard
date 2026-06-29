@@ -168,7 +168,7 @@ export default function JitApprovalsPage() {
             <DataTableRefreshButton onClick={() => void refreshAdmin()} />
           </div>
 
-          <TabsContent value="pending" className="px-8 pb-8">
+          <TabsContent value="pending" className="pb-8">
             <DataTable
               columns={pendingColumns}
               data={(pendingRequests ?? []).filter((g) => matchesSearch(g) && matchesPolicy(g))}
@@ -176,7 +176,7 @@ export default function JitApprovalsPage() {
               showSearchAndFilters={false}
             />
           </TabsContent>
-          <TabsContent value="active" className="px-8 pb-8">
+          <TabsContent value="active" className="pb-8">
             <DataTable
               columns={activeColumns}
               data={(activeGrants ?? []).filter((g) => matchesSearch(g) && matchesPolicy(g))}
