@@ -1,51 +1,46 @@
 import useFetchApi, { useApiCall } from "@utils/api";
-import { JIT_API_BASE, JIT_SWR_KEY } from "../misc/constants";
+import type { ErrorResponse } from "@utils/api";
+import { JIT_SWR_KEY } from "../misc/constants";
 
-type Envelope<T> =
-  | { success: true; data: T; meta?: unknown }
-  | { success: false; error: { code: string; message: string } };
+/** JIT error shape: native NetBird API returns {code, message} like the rest of /api. */
+export type JitError = { code: number | string; message: string };
 
-/** JIT error codes are strings (the dashboard's ErrorResponse.code is a number). */
-export type JitError = { code: string; message: string };
-
+/**
+ * Normalise whatever is thrown into a JitError.
+ * Native API errors are already {code: number, message: string} (ErrorResponse).
+ * Network failures or unparseable bodies fall back to a generic message.
+ */
 const normalize = (x: unknown): JitError => {
-  const e = x as { error?: { code?: string; message?: string }; code?: string; message?: string };
+  const e = x as Partial<ErrorResponse>;
   return {
-    code: e?.error?.code ?? e?.code ?? "error",
-    message: e?.error?.message ?? e?.message ?? "Request failed",
+    code: e?.code ?? "error",
+    message: e?.message ?? "Request failed",
   };
 };
 
-/** SWR read against the JIT backend; unwraps the envelope to the inner data. */
+/** SWR read against the native /api/jit/... paths. Returns the bare response body. */
 export function useJitFetch<T>(path: string, allowFetch = true, refreshInterval?: number) {
-  const res = useFetchApi<Envelope<T>>(path, true, true, allowFetch, {
-    origin: JIT_API_BASE,
+  const res = useFetchApi<T>(path, true, true, allowFetch, {
     key: JIT_SWR_KEY,
     refreshInterval,
   });
-  const env = res.data;
   return {
-    data: (env && env.success ? env.data : undefined) as T | undefined,
+    data: res.data,
     isLoading: res.isLoading,
     error: res.error,
     mutate: res.mutate,
   };
 }
 
-/** Mutations against the JIT backend; resolves to inner data, rejects with a clean ErrorResponse. */
+/** Mutations against the native /api/jit/... paths. Resolves to the bare body or rejects with JitError. */
 export function useJitCall<T>(path: string) {
-  const call = useApiCall<Envelope<T>>(path, true, { origin: JIT_API_BASE });
-  const unwrap = (p: Promise<Envelope<T>>): Promise<T> =>
-    p
-      .then((env) => {
-        if (env && env.success) return env.data;
-        throw normalize(env);
-      })
-      .catch((err) => Promise.reject(normalize(err)));
+  const call = useApiCall<T>(path, true);
+  const wrap = (p: Promise<T>): Promise<T> =>
+    p.catch((err) => Promise.reject(normalize(err)));
   return {
-    post: (data: unknown, suffix = "") => unwrap(call.post(data, suffix)),
-    put: (data: unknown, suffix = "") => unwrap(call.put(data, suffix)),
-    del: (suffix = "") => unwrap(call.del({}, suffix)),
-    get: (suffix = "") => unwrap(call.get(suffix)),
+    post: (data: unknown, suffix = "") => wrap(call.post(data, suffix)),
+    put: (data: unknown, suffix = "") => wrap(call.put(data, suffix)),
+    del: (suffix = "") => wrap(call.del({}, suffix)),
+    get: (suffix = "") => wrap(call.get(suffix)),
   };
 }

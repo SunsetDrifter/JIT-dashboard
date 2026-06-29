@@ -1,4 +1,7 @@
-// Frontend mirror of the jit-service contract (jit-service/src/domain/types.ts).
+// Frontend mirror of the native /api/jit contract.
+// Field names match the backend's JSON tags (camelCase).
+export type { NetworkResource as JitNetworkResource } from "@/interfaces/Network";
+
 export type GrantStatus =
   | "pending"
   | "approved"
@@ -38,7 +41,7 @@ export interface JitPolicy {
   updatedAt: string;
 }
 
-/** Trimmed view returned by GET /policies/eligible. */
+/** Trimmed view returned by GET /jit/policies/eligible. */
 export interface EligiblePolicy {
   id: string;
   name: string;
@@ -50,7 +53,7 @@ export interface EligiblePolicy {
 export interface JitGrant {
   id: string;
   policyId: string;
-  /** Resolved policy name, attached by the backend when grants are listed. */
+  /** Policy name — sent by the backend when present; resolved client-side as fallback. */
   policyName?: string;
   /** When set, this grant renews/replaces the referenced grant on activation. */
   supersedesGrantId?: string;
@@ -70,22 +73,6 @@ export interface JitGrant {
   expiresAt?: string;
   revokedAt?: string;
   lastError?: string;
-}
-
-export interface JitMe {
-  userId: string;
-  email?: string;
-  role: string;
-  isAdmin: boolean;
-  propagationEnabled: boolean;
-}
-
-export interface JitNetworkResource {
-  id: string;
-  name: string;
-  description?: string;
-  address?: string;
-  type?: "domain" | "host" | "subnet";
 }
 
 export interface CreateJitPolicyBody {

@@ -1,8 +1,3 @@
-// Base URL of the JIT companion backend, served same-origin behind Nginx at
-// /jit-api/ (proxy strips the prefix). Reusing the dashboard API layer with
-// { origin } makes calls hit `${origin}${path}` with the OIDC bearer attached.
-export const JIT_API_BASE = "/jit-api/v1";
-
 // SWR cache-key namespace so JIT requests never collide with NetBird API caches.
 export const JIT_SWR_KEY = "jit";
 
